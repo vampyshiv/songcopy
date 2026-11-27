@@ -1,5 +1,5 @@
-"""Smoke test for the built songcopy.exe (run by the Windows build):
-    python tests/smoke_exe.py dist/songcopy.exe
+"""Smoke test for the built dubplate.exe (run by the Windows build):
+    python tests/smoke_exe.py dist/dubplate.exe
 
 Makes a fake library (including a path longer than Windows' 260-character limit),
 then runs the real .exe on it: find, copy, and copy again (must skip what's already there).
@@ -45,12 +45,12 @@ dest = os.path.join(tmp, "Traktor")
 def run(*args):
     r = subprocess.run([exe, *args], capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=300,
                        env={**os.environ, "LOCALAPPDATA": os.path.join(tmp, "appdata")})
-    print(f"$ songcopy {' '.join(args)}\n{r.stdout}{r.stderr}")
+    print(f"$ dubplate {' '.join(args)}\n{r.stdout}{r.stderr}")
     return r
 
 
 r = run("--version")
-assert r.returncode == 0 and "songcopy" in r.stdout, "the exe doesn't start"
+assert r.returncode == 0 and "dubplate" in r.stdout, "the exe doesn't start"
 r = run("find", lst, "--music", lib)
 assert r.returncode == 0 and "Found 3 exact" in r.stdout, "find failed"
 r = run("copy", lst, dest, "--music", lib)

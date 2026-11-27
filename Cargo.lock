@@ -340,6 +340,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "dubplate"
+version = "2.1.0"
+dependencies = [
+ "calamine",
+ "chrono",
+ "clap",
+ "csv",
+ "encoding_rs",
+ "libc",
+ "regex",
+ "self-replace",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha1_smol",
+ "sha2",
+ "tempfile",
+ "tiny_http",
+ "unicode-general-category",
+ "unicode-normalization",
+ "ureq",
+]
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -993,30 +1017,6 @@ name = "smallvec"
 version = "1.16.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3244542535d5de959d90ec55d1b5ff0fd2bb7b1310223907d5f11932847f7b59"
-
-[[package]]
-name = "songcopy"
-version = "2.0.2"
-dependencies = [
- "calamine",
- "chrono",
- "clap",
- "csv",
- "encoding_rs",
- "libc",
- "regex",
- "self-replace",
- "semver",
- "serde",
- "serde_json",
- "sha1_smol",
- "sha2",
- "tempfile",
- "tiny_http",
- "unicode-general-category",
- "unicode-normalization",
- "ureq",
-]
 
 [[package]]
 name = "stable_deref_trait"

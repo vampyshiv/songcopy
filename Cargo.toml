@@ -1,11 +1,11 @@
 [package]
-name = "songcopy"
-version = "2.0.2"
+name = "dubplate"
+version = "2.1.0"
 edition = "2021"
 rust-version = "1.82"
 description = "Copy a list of songs out of a big music library (web page + CLI). Only ever copies."
 license = "AGPL-3.0-or-later"
-repository = "https://github.com/vampyshiv/songcopy"
+repository = "https://github.com/vampyshiv/dubplate"
 publish = false
 
 [dependencies]

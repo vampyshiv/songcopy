@@ -91,9 +91,13 @@ fn open_hosts(hosts: &[String], timeout: Duration) -> Vec<String> {
 /// -> (host whose music share opens, best guess to sign in to)
 pub fn find_server(say: impl Fn(&str), isdir: impl Fn(&str) -> bool) -> (Option<String>, String) {
     let mut names: Vec<String> = Vec::new();
-    for n in [setting_str("server"), std::env::var("SONGCOPY_SERVER").ok()]
-        .into_iter()
-        .flatten()
+    for n in [
+        setting_str("server"),
+        std::env::var("DUBPLATE_SERVER").ok(),
+        std::env::var("SONGCOPY_SERVER").ok(), // its old name
+    ]
+    .into_iter()
+    .flatten()
     {
         if !n.is_empty() && !names.contains(&n) {
             names.push(n);

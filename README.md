@@ -1,4 +1,6 @@
-# songcopy
+# dubplate
+
+*(formerly songcopy)*
 
 Copy a list of songs out of a big music library into another folder (a USB stick, a DJ
 folder, a party mix) without hunting for each file by hand.
@@ -18,31 +20,31 @@ and it updates itself.
 
 Download the program for your computer from the [latest release](../../releases/latest):
 
-- **Windows:** `songcopy-windows-x86_64.exe`. Put it wherever you like (the desktop is
+- **Windows:** `dubplate-windows-x86_64.exe`. Put it wherever you like (the desktop is
   fine) and double-click it. Windows may warn about an "unknown publisher" because the app
   isn't code-signed: click **More info → Run anyway**.
-- **Linux:** `songcopy-linux-x86_64`. It runs on any 64-bit Linux:
+- **Linux:** `dubplate-linux-x86_64`. It runs on any 64-bit Linux:
 
   ```
-  install -m 755 songcopy-linux-x86_64 ~/.local/bin/songcopy
+  install -m 755 dubplate-linux-x86_64 ~/.local/bin/dubplate
   ```
 
 ### Updates
 
 The page tells you when a new version is out and shows what changed. Click **Update now**:
-songcopy downloads it, checks it against the release's checksum, keeps the current version
+dubplate downloads it, checks it against the release's checksum, keeps the current version
 and restarts. **Go back to …** in the page footer returns to the version you had.
 
 - It asks GitHub for the newest release at most every 6 hours, and nothing else is sent.
 - Untick **check automatically** to turn that off; **Check for updates** still works.
-- In a terminal: `songcopy update`, `songcopy update --check` or `songcopy update --rollback`.
+- In a terminal: `dubplate update`, `dubplate update --check` or `dubplate update --rollback`.
 
 ## Using it
 
 ### Web page (easiest)
 
 ```
-songcopy
+dubplate
 ```
 
 This starts the tool and opens http://localhost:8765 in your browser.
@@ -64,9 +66,9 @@ This starts the tool and opens http://localhost:8765 in your browser.
 ### Terminal
 
 ```
-songcopy find  mylist.csv                       # check only, copies nothing
-songcopy copy  mylist.csv ~/Desktop/Party       # copy
-songcopy copy  mylist.xlsx /media/usb --number --playlist --prefer mp3
+dubplate find  mylist.csv                       # check only, copies nothing
+dubplate copy  mylist.csv ~/Desktop/Party       # copy
+dubplate copy  mylist.xlsx /media/usb --number --playlist --prefer mp3
 ```
 
 | Option | What it does |
@@ -89,12 +91,12 @@ Songs it can't find are printed in red and saved next to your list as `<list>-mi
 
 ### Re-running a list: only new songs
 
-songcopy remembers what it copied to each destination. When you add the missing songs to
+dubplate remembers what it copied to each destination. When you add the missing songs to
 your library and run the same list again, songs already copied there are hidden (web page)
 or skipped (terminal), so only the new finds get copied. A song is offered again if its
 copy is deleted, or if you pick a different destination. Use `--recopy`, or tick it on the
-page, to copy something again. The memory lives in `~/.cache/songcopy/copied.json`
-(Windows: `%LOCALAPPDATA%\songcopy\`). Nothing extra is written into the destination.
+page, to copy something again. The memory lives in `~/.cache/dubplate/copied.json`
+(Windows: `%LOCALAPPDATA%\dubplate\`). Nothing extra is written into the destination.
 
 ### USB stick for CDJs / XDJs
 
@@ -116,10 +118,10 @@ Converting needs **ffmpeg**. On Windows the page has an **Install ffmpeg now** b
 This is a plain-folder USB, not a rekordbox database USB, so there are no rekordbox
 playlists, waveforms or beat grids on the decks.
 
-### Windows: songcopy.exe (e.g. straight into a Traktor folder)
+### Windows: dubplate.exe (e.g. straight into a Traktor folder)
 
 The music stays on the server; songs are copied over the network into a folder on the
-Windows PC. Double-click `songcopy-windows-x86_64.exe` (see [Install](#install)). It:
+Windows PC. Double-click `dubplate-windows-x86_64.exe` (see [Install](#install)). It:
 
 - finds the server by itself on whatever network you're on: the name or address that worked
   last time, then a ~1 second scan of the network, then asks you. Type the server's
@@ -128,15 +130,15 @@ Windows PC. Double-click `songcopy-windows-x86_64.exe` (see [Install](#install))
 - opens the page. The folder picker shows the Windows drives.
 
 It expects the music at `\\<server>\home\Music` (Samba share `home` = the server user's home
-folder). Settings live in `%LOCALAPPDATA%\songcopy\settings.json`: `"server"` (name or
+folder). Settings live in `%LOCALAPPDATA%\dubplate\settings.json`: `"server"` (name or
 address to try first) and `"share_music"` (e.g. `"music"` for `\\<server>\music`). You can
-always point it somewhere else with `songcopy.exe --music D:\Music`.
+always point it somewhere else with `dubplate.exe --music D:\Music`.
 
 Windows may warn that the app is from an "unknown publisher" (it isn't code-signed):
 click **More info → Run anyway**.
 
 Moved the server to a new network? Make sure Samba (`hosts allow`) and the firewall allow
-the new network's addresses. songcopy finds the new address by itself.
+the new network's addresses. dubplate finds the new address by itself.
 
 ## How matching works
 
@@ -159,7 +161,7 @@ the new network's addresses. songcopy finds the new address by itself.
 The library is read in about a second for 25,000 songs, and a list of 1,000 songs is
 matched in well under a second. The song list is saved, so the
 web page opens instantly and refreshes in the background, which matters over a network
-share. The saved list lives in `~/.cache/songcopy/` (or `%LOCALAPPDATA%\songcopy\` on Windows).
+share. The saved list lives in `~/.cache/dubplate/` (or `%LOCALAPPDATA%\dubplate\` on Windows).
 
 ## Development
 
@@ -167,7 +169,7 @@ You need [Rust](https://rustup.rs). Then:
 
 ```
 cargo test             # unit tests, on a fake library in a temp folder (never real music)
-cargo build --release  # target/release/songcopy
+cargo build --release  # target/release/dubplate
 ```
 
 - **Code layout** (`src/`):
@@ -194,6 +196,6 @@ Versions before 2.0 were a single Python script; it's in the git history.
 
 ## License
 
-Copyright (C) 2026 vampyshiv. songcopy is free software: you can redistribute it and/or
+Copyright (C) 2026 vampyshiv. dubplate is free software: you can redistribute it and/or
 modify it under the terms of the **GNU Affero General Public License, version 3 or (at your
 option) any later version**. See [LICENSE](LICENSE).

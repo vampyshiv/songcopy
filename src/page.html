@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Song Copy</title>
+<title>Dubplate</title>
 <style>
 :root{--bg:#f6f5f2;--card:#fff;--ink:#1d1d1f;--mute:#6b6b70;--line:#e3e1dc;--acc:#2f6fdf;--acc-ink:#fff;
 --alt:#7b4bc4;--alt-bg:#f1eafb;--ok:#1f8a4c;--ok-bg:#e6f4ec;--warn:#a26300;--warn-bg:#fdf1dc;--bad:#c0392b;--bad-bg:#fbe7e4;--shadow:0 1px 2px rgba(0,0,0,.05),0 4px 16px rgba(0,0,0,.04)}
@@ -64,7 +64,7 @@ td select{width:100%}
 .hidden{display:none!important}
 .err{color:var(--bad);margin-top:8px}
 </style></head><body><main>
-<h1>Song Copy</h1>
+<h1>Dubplate</h1>
 <p class="sub">Give it a list of songs. It finds them in <b id="root">your music folder</b> and copies them to another folder.
 It only copies, so nothing in your library is moved or deleted. <span id="libinfo" class="small"></span> <a href="#" id="rescan" class="small">Rescan library</a></p>
 
@@ -119,7 +119,7 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
     <p class="small" style="margin:8px 0 0">Pick the USB stick (or a folder on it) above. Songs go into one folder, numbered in your list's order,
     and anything an older deck (XDJ-1000, CDJ-900/2000) can't play is converted; tags and artwork are kept. On the deck, browse the stick with its
     <b>folder</b> view. Use a stick formatted as <b>FAT32</b>, the one format every Pioneer deck reads.
-    <span id="noffmpeg" class="hidden" style="color:var(--bad)"><br>ffmpeg isn't installed on this computer, so songs that need converting will fail. <span id="ffmpeghelp">Install ffmpeg, then restart Song Copy.</span></span></p>
+    <span id="noffmpeg" class="hidden" style="color:var(--bad)"><br>ffmpeg isn't installed on this computer, so songs that need converting will fail. <span id="ffmpeghelp">Install ffmpeg, then restart Dubplate.</span></span></p>
   </div>
   <div class="row" style="margin-top:14px"><button class="primary" id="go">Copy songs</button><span class="small" id="gohint"></span></div>
   <div id="progress" class="hidden"><div class="bar"><i id="barfill"></i></div><div class="small" id="ptext"></div></div>
@@ -160,7 +160,7 @@ async function info(){const i=await api('/api/info');$('#root').textContent=i.ro
    `<button id="getffmpeg">Install ffmpeg now</button> <span class="small">free, about a minute</span>`+(i.ffmpeg_log?`<br><span class="small">Last try: ${esc(i.ffmpeg_log)}</span>`:'');
  const gf=$('#getffmpeg');if(gf)gf.onclick=async()=>{await api('/api/install_ffmpeg',{});info()};
  if(i.ffmpeg_installing)setTimeout(info,2000);
- $('#ver').textContent='songcopy '+i.version;if(!window.VER)window.VER=i.version;
+ $('#ver').textContent='dubplate '+i.version;if(!window.VER)window.VER=i.version;
  if(i.scanning)setTimeout(info,1000)}
 info();
 $('#rescan').onclick=async e=>{e.preventDefault();await api('/api/rescan',{});await info();const wait=async()=>{const i=await api('/api/info');if(i.scanning)return setTimeout(wait,1000);info();if(window.LAST)match(window.LAST)};wait()};
@@ -251,14 +251,14 @@ async function upd(check){const u=await api('/api/update/status'+(check?'?check=
  const rb=$('#updrollback');if(rb)rb.onclick=e=>{e.preventDefault();install('/api/update/rollback','Going back to '+u.previous)};
  $('#updstatus').textContent=u.checking?'Checking for updates…':u.error&&check?'Couldn\'t check: '+u.error:(check&&!u.available?'You have the newest version.':'');
  let hide=false;try{hide=sessionStorage.getItem('sc_later')===u.latest}catch(e){}
- if(u.available&&!hide){$('#updcard').classList.remove('hidden');$('#updtitle').textContent=`songcopy ${u.latest} is available (you have ${u.current})`;
+ if(u.available&&!hide){$('#updcard').classList.remove('hidden');$('#updtitle').textContent=`dubplate ${u.latest} is available (you have ${u.current})`;
   $('#updnotes').textContent=u.notes||'';$('#updgo').disabled=!u.can_install;$('#updmsg').textContent=u.can_install?'':(u.why_not||'')}
  else $('#updcard').classList.add('hidden');
  if(u.checking)setTimeout(()=>upd(false),2000)}
-async function install(url,what){$('#updcard').classList.remove('hidden');$('#updgo').disabled=true;$('#updmsg').textContent=what+'… (downloading, then songcopy restarts)';
+async function install(url,what){$('#updcard').classList.remove('hidden');$('#updgo').disabled=true;$('#updmsg').textContent=what+'… (downloading, then dubplate restarts)';
  const r=await api(url,{});if(r.error){$('#updmsg').textContent='Update failed: '+r.error+' - you still have '+window.VER+'.';$('#updgo').disabled=false;return}
  const start=Date.now();const wait=async()=>{try{const i=await api('/api/info');if(i.version!==window.VER){location.reload();return}}catch(e){}
-  if(Date.now()-start>60000){$('#updmsg').textContent='songcopy hasn\'t come back yet. Start it again; your files and settings are untouched.';return}setTimeout(wait,1000)};setTimeout(wait,1500)}
+  if(Date.now()-start>60000){$('#updmsg').textContent='dubplate hasn\'t come back yet. Start it again; your files and settings are untouched.';return}setTimeout(wait,1000)};setTimeout(wait,1500)}
 $('#updgo').onclick=()=>install('/api/update/apply','Updating to '+(UPD&&UPD.latest));
 $('#updlater').onclick=()=>{try{sessionStorage.setItem('sc_later',UPD.latest)}catch(e){}$('#updcard').classList.add('hidden')};
 $('#updcheck').onclick=e=>{e.preventDefault();$('#updstatus').textContent='Checking for updates…';upd(true)};

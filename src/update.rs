@@ -11,12 +11,12 @@ use std::io::Read;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-pub const REPO: &str = "vampyshiv/songcopy";
+pub const REPO: &str = "vampyshiv/dubplate";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const CHECK_EVERY: u64 = 6 * 3600;
 
 /// where this program was started from, remembered at startup: once the file has been
-/// replaced, Linux reports the running program as "songcopy (deleted)"
+/// replaced, Linux reports the running program as "dubplate (deleted)"
 static EXE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
 
 pub fn remember_exe() {
@@ -34,8 +34,8 @@ fn exe_path() -> std::io::Result<std::path::PathBuf> {
 
 pub fn asset_name() -> Option<&'static str> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("windows", "x86_64") => Some("songcopy-windows-x86_64.exe"),
-        ("linux", "x86_64") => Some("songcopy-linux-x86_64"),
+        ("windows", "x86_64") => Some("dubplate-windows-x86_64.exe"),
+        ("linux", "x86_64") => Some("dubplate-linux-x86_64"),
         _ => None,
     }
 }
@@ -68,7 +68,7 @@ fn agent() -> ureq::Agent {
     ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(10))
         .timeout_read(Duration::from_secs(60))
-        .user_agent(&format!("songcopy-updater/{VERSION}"))
+        .user_agent(&format!("dubplate-updater/{VERSION}"))
         .build()
 }
 
@@ -176,7 +176,7 @@ pub fn previous() -> Option<(String, String)> {
     for e in rd.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
         if let Some(v) = name
-            .strip_prefix("songcopy-")
+            .strip_prefix("dubplate-")
             .map(|v| v.trim_end_matches(".exe").to_string())
         {
             if v != VERSION {
@@ -191,10 +191,10 @@ fn can_replace_self() -> Result<(), String> {
     let exe = exe_path().map_err(|e| e.to_string())?;
     let dir = exe
         .parent()
-        .ok_or("can't find where songcopy is installed")?;
-    let probe = dir.join(format!(".songcopy-write-test-{}", std::process::id()));
+        .ok_or("can't find where dubplate is installed")?;
+    let probe = dir.join(format!(".dubplate-write-test-{}", std::process::id()));
     std::fs::write(&probe, b"")
-        .map_err(|_| format!("songcopy's folder ({}) isn't writable", dir.display()))?;
+        .map_err(|_| format!("dubplate's folder ({}) isn't writable", dir.display()))?;
     let _ = std::fs::remove_file(probe);
     Ok(())
 }
@@ -304,11 +304,11 @@ fn install(new_exe: &[u8], version: &str) -> Result<(), String> {
     let _ = std::fs::remove_dir_all(&bdir);
     std::fs::create_dir_all(&bdir).map_err(|e| e.to_string())?;
     let suffix = if cfg!(windows) { ".exe" } else { "" };
-    std::fs::copy(&exe, join(&bdir, &format!("songcopy-{VERSION}{suffix}")))
+    std::fs::copy(&exe, join(&bdir, &format!("dubplate-{VERSION}{suffix}")))
         .map_err(|e| format!("couldn't keep a backup ({e})"))?;
     let tmp = join(
         &paths::app_dir(),
-        &format!("songcopy-{version}-download{suffix}"),
+        &format!("dubplate-{version}-download{suffix}"),
     );
     std::fs::write(&tmp, new_exe).map_err(|e| e.to_string())?;
     #[cfg(unix)]
@@ -317,7 +317,7 @@ fn install(new_exe: &[u8], version: &str) -> Result<(), String> {
         let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755));
     }
     let r =
-        self_replace::self_replace(&tmp).map_err(|e| format!("couldn't replace songcopy ({e})"));
+        self_replace::self_replace(&tmp).map_err(|e| format!("couldn't replace dubplate ({e})"));
     let _ = std::fs::remove_file(&tmp);
     r
 }
@@ -329,9 +329,9 @@ pub fn rollback() -> Result<String, String> {
     let data = std::fs::read(&path).map_err(|e| e.to_string())?;
     let exe = exe_path().map_err(|e| e.to_string())?;
     let suffix = if cfg!(windows) { ".exe" } else { "" };
-    let keep = join(&backup_dir(), &format!("songcopy-{VERSION}{suffix}"));
+    let keep = join(&backup_dir(), &format!("dubplate-{VERSION}{suffix}"));
     let _ = std::fs::copy(&exe, &keep);
-    let tmp = join(&paths::app_dir(), &format!("songcopy-{v}-rollback{suffix}"));
+    let tmp = join(&paths::app_dir(), &format!("dubplate-{v}-rollback{suffix}"));
     std::fs::write(&tmp, &data).map_err(|e| e.to_string())?;
     #[cfg(unix)]
     {
@@ -339,7 +339,7 @@ pub fn rollback() -> Result<String, String> {
         let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755));
     }
     let r =
-        self_replace::self_replace(&tmp).map_err(|e| format!("couldn't replace songcopy ({e})"));
+        self_replace::self_replace(&tmp).map_err(|e| format!("couldn't replace dubplate ({e})"));
     let _ = std::fs::remove_file(&tmp);
     let _ = std::fs::remove_file(&path);
     r.map(|_| v)
@@ -353,12 +353,12 @@ pub fn restart() -> ! {
         args.push("--no-browser".into());
     }
     let mut cmd = std::process::Command::new(exe);
-    cmd.args(&args).env("SONGCOPY_RESTART", "1");
+    cmd.args(&args).env("DUBPLATE_RESTART", "1");
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         let e = cmd.exec(); // same process, same terminal
-        eprintln!("couldn't restart songcopy: {e}");
+        eprintln!("couldn't restart dubplate: {e}");
         std::process::exit(1);
     }
     #[cfg(not(unix))]
@@ -366,7 +366,7 @@ pub fn restart() -> ! {
         match cmd.spawn() {
             Ok(_) => std::process::exit(0),
             Err(e) => {
-                eprintln!("couldn't restart songcopy: {e}");
+                eprintln!("couldn't restart dubplate: {e}");
                 std::process::exit(1);
             }
         }

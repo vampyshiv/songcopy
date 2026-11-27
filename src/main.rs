@@ -1,13 +1,13 @@
-// songcopy - copy a list of songs out of a music library
+// dubplate - copy a list of songs out of a music library
 // Copyright (C) 2026 vampyshiv
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // This program is free software under the GNU Affero General Public License v3 or later; see LICENSE.
 
-//! songcopy                          start + open the web page in your browser
-//! songcopy serve [--port N]         same thing, explicitly (--no-browser, --dest FOLDER)
-//! songcopy copy LIST DEST           copy every song in LIST into folder DEST
-//! songcopy find LIST                just check which songs can be found (copies nothing)
-//! songcopy update [--check]         install the newest version (--rollback: go back one)
+//! dubplate                          start + open the web page in your browser
+//! dubplate serve [--port N]         same thing, explicitly (--no-browser, --dest FOLDER)
+//! dubplate copy LIST DEST           copy every song in LIST into folder DEST
+//! dubplate find LIST                just check which songs can be found (copies nothing)
+//! dubplate update [--check]         install the newest version (--rollback: go back one)
 //!
 //! It only ever COPIES: it never moves, deletes or overwrites a file.
 
@@ -30,7 +30,7 @@ use std::io::{IsTerminal, Write};
 
 #[derive(Parser)]
 #[command(
-    name = "songcopy",
+    name = "dubplate",
     version,
     about = "Copy a list of songs out of your music library (never moves or deletes)."
 )]
@@ -50,7 +50,7 @@ enum Cmd {
     Copy(CopyArgs),
     /// check a list, copy nothing
     Find(FindArgs),
-    /// install the newest version of songcopy
+    /// install the newest version of dubplate
     Update {
         /// only say whether there's a newer version
         #[arg(long)]
@@ -174,7 +174,7 @@ fn main() {
         // turn on colours in the old Windows console
         let _ = std::process::Command::new("cmd").args(["/C", ""]).status();
     }
-    // plain `songcopy` (maybe with serve options) = open the web page
+    // plain `dubplate` (maybe with serve options) = open the web page
     let mut argv: Vec<String> = std::env::args().collect();
     let known = [
         "serve",
@@ -211,10 +211,10 @@ fn run(cli: Cli) -> i32 {
     }));
     match cmd {
         Cmd::Serve(a) => {
-            let restarting = std::env::var_os("SONGCOPY_RESTART").is_some();
+            let restarting = std::env::var_os("DUBPLATE_RESTART").is_some();
             if WINDOWS && cli.music.is_none() && !restarting && server::already_running(a.port) {
                 let url = format!("http://localhost:{}", a.port); // second double-click: just show the page again
-                println!("Song Copy is already running - opening {url}");
+                println!("Dubplate is already running - opening {url}");
                 server::open_browser(&url);
                 return 0;
             }
@@ -265,7 +265,7 @@ fn update_cmd(check: bool, rollback: bool) -> i32 {
     if rollback {
         return match update::rollback() {
             Ok(v) => {
-                println!("{}Went back to songcopy {v}.{}", c.g, c.x);
+                println!("{}Went back to dubplate {v}.{}", c.g, c.x);
                 0
             }
             Err(e) => {
@@ -285,7 +285,7 @@ fn update_cmd(check: bool, rollback: bool) -> i32 {
         return 0;
     }
     println!(
-        "{}songcopy {latest} is available{} (you have {})\n",
+        "{}dubplate {latest} is available{} (you have {})\n",
         c.b,
         c.x,
         update::VERSION
@@ -294,13 +294,13 @@ fn update_cmd(check: bool, rollback: bool) -> i32 {
         println!("{n}\n");
     }
     if check {
-        println!("Run  songcopy update  to install it.");
+        println!("Run  dubplate update  to install it.");
         return 0;
     }
     match update::apply() {
         Ok(v) => {
             println!(
-                "{}Updated to songcopy {v}.{} (songcopy update --rollback goes back)",
+                "{}Updated to dubplate {v}.{} (dubplate update --rollback goes back)",
                 c.g, c.x
             );
             0

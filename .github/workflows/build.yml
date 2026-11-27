@@ -1,4 +1,4 @@
-# Builds songcopy for Windows and Linux on real machines, tests each build, and (for version
+# Builds dubplate for Windows and Linux on real machines, tests each build, and (for version
 # tags) publishes a release with both builds and a SHA256SUMS file the updater checks against.
 # Make a release: update CHANGELOG.md and the version in Cargo.toml, then
 #   git tag v2.1.0 && git push origin v2.1.0
@@ -22,12 +22,12 @@ jobs:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            asset: songcopy-windows-x86_64.exe
-            bin: target/x86_64-pc-windows-msvc/release/songcopy.exe
+            asset: dubplate-windows-x86_64.exe
+            bin: target/x86_64-pc-windows-msvc/release/dubplate.exe
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl     # static: runs on any Linux
-            asset: songcopy-linux-x86_64
-            bin: target/x86_64-unknown-linux-musl/release/songcopy
+            asset: dubplate-linux-x86_64
+            bin: target/x86_64-unknown-linux-musl/release/dubplate
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -79,14 +79,19 @@ jobs:
 
       - name: Checksums and release notes
         run: |
-          cd out && sha256sum songcopy-* > SHA256SUMS && cat SHA256SUMS && cd ..
+          # dubplate used to be called songcopy: songcopy 2.0.x looks for downloads by its old
+          # names, so publish them under those too and old copies can update onto dubplate.
+          # (Drop these two lines once nobody runs songcopy 2.0.x any more.)
+          cp out/dubplate-linux-x86_64 out/songcopy-linux-x86_64
+          cp out/dubplate-windows-x86_64.exe out/songcopy-windows-x86_64.exe
+          cd out && sha256sum dubplate-* songcopy-* > SHA256SUMS && cat SHA256SUMS && cd ..
           v="${GITHUB_REF_NAME#v}"
           # the section of CHANGELOG.md for this version (between its heading and the next one)
           awk -v v="$v" '/^## /{p = ($2 == v)} p && !/^## /' CHANGELOG.md > notes.md
-          test -s notes.md || echo "songcopy $v" > notes.md
+          test -s notes.md || echo "dubplate $v" > notes.md
           cat notes.md
 
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" out/* --title "songcopy $GITHUB_REF_NAME" --notes-file notes.md
+        run: gh release create "$GITHUB_REF_NAME" out/* --title "dubplate $GITHUB_REF_NAME" --notes-file notes.md

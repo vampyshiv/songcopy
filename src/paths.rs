@@ -15,7 +15,7 @@ pub const SEP: char = '/';
 
 pub const WINDOWS: bool = cfg!(windows);
 
-/// tests that change environment variables (songcopy's folder) take turns
+/// tests that change environment variables (dubplate's folder) take turns
 #[cfg(test)]
 pub static TEST_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -32,7 +32,7 @@ pub fn is_absolute(p: &str) -> bool {
     p.starts_with(is_sep) || has_drive(p)
 }
 
-/// os.path.join(a, b) for the cases songcopy needs
+/// os.path.join(a, b) for the cases dubplate needs
 pub fn join(a: &str, b: &str) -> String {
     if is_absolute(b) || a.is_empty() {
         return b.to_string();
@@ -215,7 +215,7 @@ pub fn nearest_existing(p: &str) -> String {
 }
 
 /// For handing a path to another program (ffmpeg) on Windows: the \\?\ form works past 260 characters.
-/// (songcopy's own file access handles long paths by itself.)
+/// (dubplate's own file access handles long paths by itself.)
 pub fn longp(p: &str) -> String {
     if !WINDOWS || p.starts_with("\\\\?\\") {
         return p.to_string();
@@ -228,13 +228,36 @@ pub fn longp(p: &str) -> String {
     }
 }
 
-/// songcopy's own folder for its memory: %LOCALAPPDATA%\songcopy or ~/.cache/songcopy
+/// dubplate's own folder for its memory: %LOCALAPPDATA%\dubplate or ~/.cache/dubplate
 pub fn app_dir() -> String {
     let base = std::env::var("LOCALAPPDATA")
         .ok()
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| join(&home(), ".cache"));
-    join(&base, "songcopy")
+    let dir = join(&base, "dubplate");
+    migrate_from_songcopy(&base, &dir);
+    dir
+}
+
+/// dubplate used to be called songcopy: bring its settings, copy memory and saved song lists
+/// over the first time (copied, so the old folder is left as it was)
+fn migrate_from_songcopy(base: &str, dir: &str) {
+    let old = join(base, "songcopy");
+    if exists(dir) || !isdir(&old) {
+        return;
+    }
+    let Ok(rd) = std::fs::read_dir(&old) else {
+        return;
+    };
+    if std::fs::create_dir_all(dir).is_err() {
+        return;
+    }
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.is_file() && p.extension().is_some_and(|x| x == "json") {
+            let _ = std::fs::copy(&p, Path::new(dir).join(e.file_name()));
+        }
+    }
 }
 
 pub fn write_atomic(path: &str, data: &[u8]) -> std::io::Result<()> {

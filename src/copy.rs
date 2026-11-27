@@ -363,7 +363,7 @@ pub fn usb_folder(dest: &str, name: &str) -> String {
     let n = safe(name.trim());
     let n = n.trim_matches(|c| c == '.' || c == ' ');
     let n: String = if n.is_empty() {
-        "songcopy".into()
+        "dubplate".into()
     } else {
         n.chars().take(80).collect()
     };
@@ -388,8 +388,8 @@ pub fn estimate_size(plan: &[(String, String)], usb_format: Option<&str>) -> u64
 
 // ---------------------------------------------------------------------------- remembering what was copied
 
-/// What songcopy copied to each destination, so a re-run of the same list (after you've added the
-/// missing songs to your library) only offers what's still to do. Kept in songcopy's own folder -
+/// What dubplate copied to each destination, so a re-run of the same list (after you've added the
+/// missing songs to your library) only offers what's still to do. Kept in dubplate's own folder -
 /// nothing extra is written into the destination. A song counts as copied only while its copy exists.
 /// Same file as the Python version: copied.json = {destination: {source: copy}}.
 pub struct Ledger;
@@ -443,7 +443,7 @@ impl Ledger {
                     continue;
                 }
             }
-            // copied before songcopy kept a record (or by hand): same name + size right in dest
+            // copied before dubplate kept a record (or by hand): same name + size right in dest
             let d = join(&dest, &safe(basename(s)));
             if paths::exists(&d) && paths::getsize(&d).ok() == paths::getsize(s).ok() {
                 out.insert(s.clone(), d);

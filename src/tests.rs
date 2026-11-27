@@ -33,7 +33,7 @@ struct Fixture {
 fn fixture() -> Fixture {
     let guard = TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
     let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("LOCALAPPDATA", tmp.path().join("appdata")); // keep songcopy's memory out of ~
+    std::env::set_var("LOCALAPPDATA", tmp.path().join("appdata")); // keep dubplate's memory out of ~
     let root = tmp.path().join("Music").to_string_lossy().into_owned();
     for rel in LIBRARY {
         let p = join(&root, &rel.replace('/', &paths::SEP.to_string()));
@@ -325,4 +325,33 @@ fn what_decks_can_play() {
     assert!(!copy::deck_playable("x.wav", &p("pcm_s24le", 96000, 24)));
     assert!(copy::deck_playable("x.m4a", &p("aac", 44100, 0)));
     assert!(!copy::deck_playable("x.m4a", &p("alac", 44100, 16)));
+}
+
+#[test]
+fn brings_songcopy_settings_and_memory_along() {
+    let _g = TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
+    let tmp = tempfile::tempdir().unwrap();
+    let base = tmp.path().to_string_lossy().into_owned();
+    std::env::set_var("LOCALAPPDATA", &base);
+    let old = join(&base, "songcopy");
+    std::fs::create_dir_all(join(&old, "previous")).unwrap();
+    std::fs::write(
+        join(&old, "settings.json"),
+        br#"{"server": "myserver.local"}"#,
+    )
+    .unwrap();
+    std::fs::write(join(&old, "copied.json"), b"{}").unwrap();
+    let dir = paths::app_dir();
+    assert!(dir.ends_with("dubplate"));
+    assert_eq!(
+        crate::discover::setting_str("server").as_deref(),
+        Some("myserver.local")
+    );
+    assert!(paths::isfile(&join(&dir, "copied.json")));
+    assert!(paths::isfile(&join(&old, "settings.json"))); // the old folder is left as it was
+    std::fs::write(join(&old, "settings.json"), br#"{"server": "changed"}"#).unwrap();
+    assert_eq!(
+        crate::discover::setting_str("server").as_deref(),
+        Some("myserver.local")
+    ); // only once
 }

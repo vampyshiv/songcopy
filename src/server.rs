@@ -106,7 +106,7 @@ pub fn already_running(port: u16) -> bool {
 
 pub fn serve(o: Options) {
     let url = format!("http://localhost:{}", o.port);
-    let restarting = std::env::var_os("SONGCOPY_RESTART").is_some();
+    let restarting = std::env::var_os("DUBPLATE_RESTART").is_some();
     if !paths::isdir(&paths::abspath(&paths::expanduser(&o.music))) {
         eprintln!("Can't open the music folder: {}", o.music);
         std::process::exit(1);
@@ -124,14 +124,14 @@ pub fn serve(o: Options) {
                     continue;
                 }
                 if already_running(o.port) {
-                    println!("Song Copy is already running - opening {url}");
+                    println!("Dubplate is already running - opening {url}");
                     if o.no_browser || !open_browser(&url) {
                         println!("Open {url} in your browser.");
                     }
                     return;
                 }
                 eprintln!(
-                    "Can't start on port {}: {e}\nTry:  songcopy serve --port {}",
+                    "Can't start on port {}: {e}\nTry:  dubplate serve --port {}",
                     o.port,
                     o.port + 1
                 );
@@ -155,7 +155,7 @@ pub fn serve(o: Options) {
             lib.scan(|_| {});
         });
     }
-    println!("\n  Song Copy {} is running at  {url}", update::VERSION);
+    println!("\n  Dubplate {} is running at  {url}", update::VERSION);
     if o.host == "0.0.0.0" {
         println!("  (also reachable from other devices on your network at this computer's IP)");
     }

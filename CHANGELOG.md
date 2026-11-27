@@ -1,6 +1,19 @@
 # Changelog
 
-Each version's notes are shown in songcopy's update card before you install it.
+Each version's notes are shown in dubplate's update card before you install it.
+
+## 2.1.0
+
+**songcopy is now called dubplate.** A dubplate is a one-off record cut just for a DJ to
+play out, and that's what this makes: a one-off USB or folder of exactly your set, from your
+own library. Nothing else changes.
+
+- Your settings, the "already copied" memory and your saved song list come along by
+  themselves. The old `songcopy` folder is left as it was.
+- Updating from songcopy works as usual. The program file keeps whatever name you gave it;
+  rename it to `dubplate.exe` if you like.
+- Downloads are now `dubplate-windows-x86_64.exe` and `dubplate-linux-x86_64`.
+- The project lives at github.com/vampyshiv/dubplate (old links still work).
 
 ## 2.0.2
 
