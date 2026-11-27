@@ -167,3 +167,27 @@ details.q > :not(summary) { margin: 6px 0; }
   dl.terms dd { margin-bottom: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+
+/* ---- table of contents in the sidebar: every guide, its sections nested under it */
+.side { max-height: calc(100vh - env(safe-area-inset-top, 0px) - 48px); overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+.side ul.toc > li > details > summary { display: flex; align-items: center; list-style: none; cursor: pointer; border-radius: 7px; }
+.side ul.toc > li > details > summary::-webkit-details-marker { display: none; }
+.side ul.toc > li > details > summary a { flex: 1; }
+.side ul.toc > li > details > summary::after {
+  content: ""; flex: none; width: 7px; height: 7px; margin: 0 10px 0 6px;
+  border-right: 1.5px solid var(--mute); border-bottom: 1.5px solid var(--mute);
+  transform: rotate(-45deg); transition: transform .15s;
+}
+.side ul.toc > li > details[open] > summary::after { transform: rotate(45deg); }
+.side ul.secs { margin: 2px 0 8px 12px; padding-left: 10px; border-left: 1px solid var(--line); gap: 0; }
+.side ul.secs a { font-size: 13.5px; line-height: 1.35; padding: 4px 8px; color: var(--mute); }
+.side ul.secs a:hover { color: var(--ink); }
+.side ul.secs a.on { color: var(--acc); font-weight: 650; background: none; }
+@media (max-width: 860px) {
+  .side { max-height: none; overflow: visible; padding-right: 0; }
+  .side nav { max-height: 70vh; overflow-y: auto; }
+}
+.side { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.side::-webkit-scrollbar { width: 6px; }
+.side::-webkit-scrollbar-track { background: transparent; }
+.side::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
