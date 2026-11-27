@@ -291,7 +291,7 @@ fn run(cli: Cli) -> i32 {
                     Ok(r) => {
                         println!("Put back the stick's library from {b}.");
                         if let Some(p) = &r.problem {
-                            eprintln!("But {p}. Try the stick on a deck before a gig, or restore another backup.");
+                            eprintln!("But {} Try the stick on a deck before a gig, or restore another backup.", rekordbox::sentence(p));
                         }
                         if let Some(n) = r.backup {
                             println!("What it held just now is backed up too ({n}).");

@@ -434,7 +434,14 @@ fn write_atomic_as(path: &str, data: &[u8], private: bool) -> std::io::Result<()
     clean_stale_tmp(path);
     let n = TMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let tmp = format!("{path}.{}-{n}.tmp", std::process::id());
-    let mut r = std::fs::write(&tmp, data);
+    // on the disk before it takes the real name, so a crash or a pulled stick never leaves an
+    // empty file under it
+    let mut r = (|| {
+        use std::io::Write;
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(data)?;
+        f.sync_all()
+    })();
     #[cfg(unix)]
     if private && r.is_ok() {
         use std::os::unix::fs::PermissionsExt;

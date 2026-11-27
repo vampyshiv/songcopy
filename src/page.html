@@ -294,7 +294,7 @@ async function rbBackups(){const stick=$('#dest').value.trim(),el=$('#rbbackups'
   if(x.error){$('#rbrmsg').innerHTML=`<span style="color:var(--bad)">${esc(x.error)}</span>`;b.disabled=false;disarm();return}
   const miss=x.missing||[];
   $('#done').innerHTML=`<div class="banner ${miss.length||x.problem?'bad':'ok'}"><b>Restored</b> the stick's library from ${esc(armed.backup)}.`+(x.backup?` <span class="small">What it held just now is backed up too (${esc(x.backup)}).</span>`:'')+
-   (miss.length?`<br>${miss.length} song${miss.length>1?'s':''} in the restored playlists ${miss.length>1?'were':'was'} taken off the stick by a later export - send ${miss.length>1?'those sets':'that set'} again to put ${miss.length>1?'them':'it'} back:<br><span class="small">${miss.slice(0,20).map(esc).join('<br>')}${miss.length>20?'<br>…':''}</span>`:'')+(x.problem?`<br><b>But ${esc(x.problem)}.</b> Try the stick on a deck before a gig, or restore another backup.`:'')+'</div>';
+   (miss.length?`<br>${miss.length} song${miss.length>1?'s':''} in the restored playlists ${miss.length>1?'were':'was'} taken off the stick by a later export - send ${miss.length>1?'those sets':'that set'} again to put ${miss.length>1?'them':'it'} back:<br><span class="small">${miss.slice(0,20).map(esc).join('<br>')}${miss.length>20?'<br>…':''}</span>`:'')+(x.problem?`<br><b>But ${esc(x.problem.replace(/\.+$/,''))}.</b> Try the stick on a deck before a gig, or restore another backup.`:'')+'</div>';
   rbBackups()}}
 // songs already copied to the chosen folder (earlier runs) are hidden
 let CHECKT=null,CHECKN=0;
