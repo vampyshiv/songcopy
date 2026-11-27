@@ -492,7 +492,11 @@ fn data_dir() -> String {
 /// Windows and Linux: the last 8 hex digits (Windows gives FAT/exFAT/NTFS sticks' 32-bit serial,
 /// Linux shows it as `1A2B-3C4D`, or 16 digits for NTFS).
 fn volume_serial(stick: &str) -> Option<String> {
-    let s: String = volume_serial_raw(stick)?.chars().filter(char::is_ascii_hexdigit).collect::<String>().to_ascii_uppercase();
+    normal_serial(&volume_serial_raw(stick)?)
+}
+
+fn normal_serial(raw: &str) -> Option<String> {
+    let s: String = raw.chars().filter(char::is_ascii_hexdigit).collect::<String>().to_ascii_uppercase();
     (s.len() >= 8).then(|| s[s.len() - 8..].to_string())
 }
 
@@ -1066,10 +1070,7 @@ mod tests {
         // on a real disk (not a RAM disk), so the system can say which volume it is
         let tmp = tempfile::tempdir_in(concat!(env!("CARGO_MANIFEST_DIR"), "/target")).unwrap();
         let st = tmp.path().to_string_lossy().into_owned();
-        let serial = volume_serial(&st);
-        if cfg!(target_os = "linux") && std::path::Path::new("/dev/disk/by-uuid").is_dir() {
-            assert!(serial.is_some(), "no serial for {st}");
-        }
+        let serial = volume_serial(&st); // None where the system can't tell (some containers / CI)
         let id = stick_id(&st, true).unwrap().unwrap();
         assert_eq!(stick_id(&st, false).unwrap().as_ref(), Some(&id)); // stable
         let text = std::fs::read_to_string(tmp.path().join(".dubplate/stick-id")).unwrap();
@@ -1080,8 +1081,10 @@ mod tests {
             let new = stick_id(&st, true).unwrap().unwrap();
             assert_ne!(new, id);
         }
-        // the same stick seen by Windows (1A2B3C4D) and Linux (1A2B-3C4D) is one stick
-        assert_eq!(volume_serial(&st).map(|s| s.len()), serial.as_ref().map(|_| 8));
+        // the same stick seen by Windows (1A2B3C4D) and Linux (1A2B-3C4D, or 16 digits for NTFS)
+        assert_eq!(normal_serial("1A2B-3C4D"), normal_serial("1a2b3c4d"));
+        assert_eq!(normal_serial("01D9F2C41A2B3C4D").as_deref(), Some("1A2B3C4D"));
+        assert_eq!(normal_serial("12"), None);
         // written by an older dubplate without the serial: learnt, same name
         std::fs::write(tmp.path().join(".dubplate/stick-id"), format!("{id}\n")).unwrap();
         assert_eq!(stick_id(&st, true).unwrap().as_ref(), Some(&id));
