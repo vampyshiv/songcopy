@@ -14,6 +14,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub const REPO: &str = "vampyshiv/dubplate";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const CHECK_EVERY: u64 = 6 * 3600;
+/// after a check that failed, wait this long before trying again by itself
+const RETRY_AFTER: u64 = 30 * 60;
 
 /// where this program was started from, remembered at startup: once the file has been
 /// replaced, Linux reports the running program as "dubplate (deleted)"
@@ -85,6 +87,11 @@ fn newer(latest: &str, current: &str) -> bool {
 fn cached_release() -> Option<Release> {
     let s = load_settings();
     let r = s.get("update_latest")?;
+    // only what this version found: another version (before an update or "Go back") may have
+    // been looking at other releases (test builds, or not)
+    if r.get("for").and_then(Value::as_str) != Some(VERSION) {
+        return None;
+    }
     Some(Release {
         version: r.get("version")?.as_str()?.to_string(),
         notes: r
@@ -124,12 +131,16 @@ fn pick_release(list: &[Value], with_tests: bool) -> Option<&Value> {
             let tag = r.get("tag_name")?.as_str()?.trim_start_matches('v');
             Some((semver::Version::parse(tag).ok()?, r))
         })
+        // a test version number is a test build even if GitHub wasn't told so
+        .filter(|(v, _)| with_tests || v.pre.is_empty())
         .max_by(|a, b| a.0.cmp(&b.0))
         .map(|(_, r)| r)
 }
 
 /// ask GitHub for the newest release (and remember it)
 pub fn check_now() -> Result<(), String> {
+    // a failed check isn't tried again at once (offline, or GitHub limiting requests)
+    save_setting("update_tried", Value::from(now()));
     let url = format!("https://api.github.com/repos/{REPO}/releases?per_page=50");
     let resp = agent()
         .get(&url)
@@ -160,6 +171,7 @@ pub fn check_now() -> Result<(), String> {
         "url": v.get("html_url").and_then(Value::as_str).unwrap_or(""),
         "asset_url": asset_name().and_then(asset),
         "sums_url": asset("SHA256SUMS"),
+        "for": VERSION,
     });
     save_setting("update_latest", r);
     save_setting("update_checked", Value::from(now()));
@@ -264,8 +276,11 @@ pub struct Status {
 /// what the page shows. Starts a check when asked, or when the last one is over 6 hours old.
 pub fn status(force: bool) -> Status {
     let s = load_settings();
-    let last = s.get("update_checked").and_then(Value::as_u64).unwrap_or(0);
-    if force || (auto_enabled() && now().saturating_sub(last) > CHECK_EVERY) {
+    let fresh = cached_release().is_some(); // found by this version
+    let last = if fresh { s.get("update_checked").and_then(Value::as_u64).unwrap_or(0) } else { 0 };
+    let tried = s.get("update_tried").and_then(Value::as_u64).unwrap_or(0);
+    let due = now().saturating_sub(last) > CHECK_EVERY && now().saturating_sub(tried) > RETRY_AFTER;
+    if force || (auto_enabled() && due) {
         check_in_background();
     }
     let rel = cached_release();
@@ -461,11 +476,23 @@ mod tests {
     #[test]
     fn versions() {
         assert!(newer("2.1.0", "2.0.0"));
+        {
+            // what another version found isn't shown by this one
+            let _g = crate::paths::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
+            let tmp = tempfile::tempdir().unwrap();
+            std::env::set_var("LOCALAPPDATA", tmp.path());
+            save_setting("update_latest", json!({"version": "2.2.0", "for": "2.2.0"}));
+            assert!(cached_release().is_none());
+            save_setting("update_latest", json!({"version": "9.0.0-alpha.1", "for": VERSION}));
+            assert_eq!(cached_release().unwrap().version, "9.0.0-alpha.1");
+        }
         assert!(newer("1.0.0-alpha.2", "1.0.0-alpha.1"));
         assert!(newer("1.0.0-beta.1", "1.0.0-alpha.9"));
         assert!(newer("1.0.0", "1.0.0-beta.3"));
         assert!(test_build("1.0.0-alpha.1") && !test_build("1.0.0"));
         let rel = |tag: &str, pre: bool, draft: bool| json!({"tag_name": tag, "prerelease": pre, "draft": draft});
+        // a test version published without the pre-release mark is still a test build
+        assert!(pick_release(&[rel("v1.1.0-beta.1", false, false)], false).is_none());
         let list = vec![rel("v1.0.0-beta.1", true, false), rel("v1.0.0-beta.2", true, true), rel("v1.0.0-alpha.3", true, false)];
         let tag = |r: Option<&Value>| r.and_then(|r| r["tag_name"].as_str()).map(str::to_string);
         assert_eq!(tag(pick_release(&list, true)).as_deref(), Some("v1.0.0-beta.1")); // drafts never

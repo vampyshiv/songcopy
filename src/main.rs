@@ -137,7 +137,8 @@ struct CopyArgs {
     /// The stick's library is backed up first.
     #[arg(long, conflicts_with_all = ["usb", "folders", "number", "playlist"])]
     rekordbox: bool,
-    /// what --rekordbox converts songs older decks can't play (FLAC, ALAC, Opus, ...) to;
+    /// what --rekordbox converts songs older decks can't play (FLAC, ALAC, AAC, Ogg, hi-res;
+    /// Opus and WMA need ffmpeg) to;
     /// none = copy them as they are (CDJ-2000NXS2 / CDJ-3000 and newer play FLAC)
     #[arg(long, value_parser = ["aiff", "mp3", "wav", "none"], default_value = "aiff")]
     convert: String,
@@ -181,6 +182,17 @@ fn colours() -> C {
         x: c("\x1b[0m"),
         on,
     }
+}
+
+/// every library folder: the main one and the "also look in" folders from Settings
+/// (only folders already known: no looking for a server)
+fn library_folders(music: Option<String>) -> Vec<String> {
+    let mut v: Vec<String> = music.or_else(|| discover::setting_str("music")).into_iter().collect();
+    if !WINDOWS {
+        v.push(paths::join(&paths::home(), "Music"));
+    }
+    v.extend(discover::setting_list("extra_folders"));
+    v
 }
 
 /// the main music folder: --music, else the one chosen in Settings, else (Windows) the music
@@ -287,7 +299,7 @@ fn run(cli: Cli) -> i32 {
                     println!("Put one back with: dubplate restore-stick {shown} \"<backup>\"");
                     0
                 }
-                Some(b) => match rekordbox::restore(&stick, &b) {
+                Some(b) => match rekordbox::restore(&stick, &b, &library_folders(cli.music.clone())) {
                     Ok(r) => {
                         println!("Put back the stick's library from {b}.");
                         if let Some(p) = &r.problem {
@@ -653,7 +665,7 @@ fn cli_run(music: &str, list: &str, prefer: &str, strict: bool, copy: Option<Cop
             return incomplete;
         }
         let on = c.on;
-        let r = rekordbox::export_set(&dest, &name, &songs, rekordbox::parse_convert(&a.convert), &|p| {
+        let r = rekordbox::export_set(&dest, &name, &songs, rekordbox::parse_convert(&a.convert), &lib.roots(), &|p| {
             if on {
                 let count = if p.total > 0 { format!("{}/{}", p.done, p.total) } else { String::new() };
                 print!("\r  {:<10} {count:<9} {:<50}", p.stage, p.current.chars().take(50).collect::<String>());

@@ -56,7 +56,7 @@
 <details class="q"><summary>"ffmpeg isn't installed"</summary><p>Needed only for the plain USB's conversions. On Windows, click <strong>Install ffmpeg now</strong> on the page. On Linux: <code>sudo apt install ffmpeg</code>.</p></details>
 <details class="q"><summary>"couldn't convert it - the file may be damaged"</summary><p>The file couldn't be read. Try playing it on your computer; you may need a fresh copy of that song.</p></details>
 <details class="q"><summary>Windows can't find my home server</summary><p>Check that you can open the server's music share (like <code>\\server\home\Music</code>) in File Explorer. On the server, the file-sharing settings and firewall must allow your network.</p></details>
-<details class="q"><summary>"Port 8765 is taken"</summary><p>Something else is using that port. Start dubplate with <code>dubplate serve --port 8766</code>.</p></details>
+<details class="q"><summary>"Can't start on port 8765"</summary><p>Something else is using that port. Start dubplate with <code>dubplate serve --port 8766</code>.</p></details>
 <details class="q"><summary>Soulseek: "didn't accept the API key"</summary><p>The key in ⚙ Settings must match the one in slskd's options exactly, and slskd may need a restart after you add it.</p></details>
 <details class="q"><summary>Soulseek: "the API key is read-only"</summary><p>Give the key <code>role: readwrite</code> in slskd's options.</p></details>
 <details class="q"><summary>Soulseek: downloaded, but the song is still red</summary><p>The song is in slskd's download folder, which isn't one of your library folders. Add it under ⚙ Settings → <strong>Also look in</strong>.</p></details>
@@ -64,7 +64,7 @@
 
 <h2 id="questions">Questions</h2>
 <details class="q"><summary>Can dubplate damage my music library?</summary><p>No. It only reads your library and copies from it. It never moves, renames, deletes or overwrites your files.</p></details>
-<details class="q"><summary>Does it change the tags in my files?</summary><p>No. Converted copies on a USB stick keep their tags and artwork; your originals aren't touched.</p></details>
+<details class="q"><summary>Does it change the tags in my files?</summary><p>No. Your originals aren't touched. On a plain USB, converted copies keep their tags and artwork. On a rekordbox stick, the song's details live in the stick's library instead.</p></details>
 <details class="q"><summary>Does it work with Serato, Engine DJ or Denon decks?</summary><p>Copying to a folder works with any DJ software. The USB sticks are made for Pioneer CDJs and XDJs; a plain USB's folders may also play on other decks that read FAT32 sticks, but that isn't tested.</p></details>
 <details class="q"><summary>Is my music uploaded anywhere?</summary><p>No. Everything happens on your computer. The only thing dubplate sends over the internet is its check for updates (and, if you set it up, requests to your own slskd).</p></details>
 <details class="q"><summary>Do I need rekordbox for a rekordbox USB?</summary><p>No. dubplate writes the stick itself. You can still open the stick in rekordbox if you want.</p></details>
@@ -80,7 +80,7 @@
 <dt>FAT32 / exFAT</dt><dd>Ways a USB stick can be formatted. Every Pioneer deck reads FAT32; newer ones also read exFAT.</dd>
 <dt>Lossless</dt><dd>Audio with nothing removed: FLAC, ALAC, AIFF, WAV. Bigger files.</dd>
 <dt>FLAC</dt><dd>A lossless format that's smaller than WAV or AIFF. Older decks can't play it.</dd>
-<dt>AIFF / WAV</dt><dd>Lossless, uncompressed formats every deck plays. AIFF keeps tags and artwork more reliably.</dd>
+<dt>AIFF / WAV</dt><dd>Lossless, uncompressed formats every deck plays (at 44.1 or 48 kHz, 16 or 24-bit).</dd>
 <dt>MP3 320</dt><dd>MP3 at its highest quality (320 kilobits per second). Much smaller than lossless; on a club system most people can't hear the difference.</dd>
 <dt>Extended Mix / Radio Edit</dt><dd>Versions of the same track. The extended mix has longer intros and outros for mixing; the radio edit is shorter.</dd>
 <dt>Playlist file (M3U)</dt><dd>A small file listing songs in order. DJ and music apps can import and export it.</dd>

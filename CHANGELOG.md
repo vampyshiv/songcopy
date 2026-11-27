@@ -6,7 +6,8 @@ Each version's notes are shown in dubplate's update card before you install it.
 
 **Test build.** dubplate is in alpha until 1.0: builds are published as pre-releases and
 only test builds offer them as updates. Version numbers start again at 1.0.0-alpha.1 (the
-versions below were earlier development builds).
+versions below were earlier development builds). Copies numbered 2.x don't find these versions by themselves:
+download this one once by hand; it updates itself from then on.
 
 **Rekordbox USB sticks, without rekordbox.** A third choice in step 3, **🎛 Rekordbox USB**,
 makes a stick the decks read like one made in rekordbox:
@@ -16,8 +17,8 @@ makes a stick the decks read like one made in rekordbox:
   remembered, so the next stick is quick.
 - **Several sets per stick.** A new name adds a playlist, and the same name replaces it.
   Playlists already on the stick stay.
-- Songs older decks can't play (FLAC, ALAC, Ogg, hi-res) are **converted for the stick**:
-  AIFF, MP3 320 or WAV. Or leave them as FLAC for decks that play it. No ffmpeg needed.
+- Songs older decks can't play (FLAC, ALAC, AAC, Ogg, hi-res; Opus and WMA through ffmpeg) are **converted for the stick**:
+  AIFF, MP3 320 or WAV. Or leave them as FLAC for decks that play it.
 - The stick's library is **backed up before every export**. **Restore…** under the stick (or
   `dubplate restore-stick`) puts it back.
 

@@ -438,7 +438,14 @@ fn write_atomic_as(path: &str, data: &[u8], private: bool) -> std::io::Result<()
     // empty file under it
     let mut r = (|| {
         use std::io::Write;
-        let mut f = std::fs::File::create(&tmp)?;
+        let mut o = std::fs::OpenOptions::new();
+        o.write(true).create_new(true);
+        #[cfg(unix)]
+        if private {
+            use std::os::unix::fs::OpenOptionsExt;
+            o.mode(0o600); // private from the start, not only once written
+        }
+        let mut f = o.open(&tmp)?;
         f.write_all(data)?;
         f.sync_all()
     })();

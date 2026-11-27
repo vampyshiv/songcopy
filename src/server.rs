@@ -324,6 +324,10 @@ fn handle(ctx: &Ctx, mut req: tiny_http::Request) {
         )
     } else if path == "/api/stick/restore" && !here {
         (json!({"error": "A stick can only be restored on the computer dubplate is running on."}), false)
+    } else if path == "/api/rekordbox" && !here {
+        (json!({"error": "Rekordbox sticks can only be made on the computer dubplate is running on."}), false)
+    } else if (path == "/api/update/apply" || path == "/api/update/rollback") && !here {
+        (json!({"error": "dubplate can only be updated on the computer it's running on."}), false)
     } else {
         post(ctx, &path, &b)
     };
@@ -820,7 +824,7 @@ fn post(ctx: &Ctx, path: &str, b: &Value) -> (Value, bool) {
             } else if RB_BUSY.swap(true, std::sync::atomic::Ordering::SeqCst) {
                 json!({"error": "A rekordbox stick is being written; wait for it to finish."})
             } else {
-                let r = std::panic::catch_unwind(|| rekordbox::restore(&stick, s(b, "backup")))
+                let r = std::panic::catch_unwind(|| rekordbox::restore(&stick, s(b, "backup"), &ctx.lib.roots()))
                     .unwrap_or_else(|_| Err("dubplate hit a bug restoring the stick".into()));
                 RB_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
                 match r {
@@ -1300,6 +1304,10 @@ fn start_rekordbox(ctx: &Ctx, b: &Value) -> Value {
     if !paths::isdir(&stick) {
         return json!({"error": format!("{stick} isn't there (is the stick plugged in?)")});
     }
+    let library = ctx.lib.roots();
+    if let Err(e) = rekordbox::not_the_library(&stick, &library) {
+        return json!({"error": e});
+    }
     let name = s(b, "name").trim().to_string();
     if name.is_empty() {
         return json!({"error": "Give the playlist a name."});
@@ -1364,7 +1372,7 @@ fn start_rekordbox(ctx: &Ctx, b: &Value) -> Value {
             }
         };
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            rekordbox::export_set(&stick, &name, &songs, convert, &|p| set(&|j| j.progress = p.clone()))
+            rekordbox::export_set(&stick, &name, &songs, convert, &library, &|p| set(&|j| j.progress = p.clone()))
         }))
         .unwrap_or_else(|_| Err("dubplate hit a bug writing the stick. If it had a library, it was backed up first (see Backups below).".into()));
         set(&|j| {

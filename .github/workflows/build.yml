@@ -78,6 +78,13 @@ jobs:
           path: out
           merge-multiple: true
 
+      - name: The tag and the program's version agree
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          have="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          echo "tag $want, Cargo.toml $have"
+          test "$want" = "$have"
+
       - name: Checksums and release notes
         run: |
           cd out && sha256sum dubplate-* > SHA256SUMS && cat SHA256SUMS && cd ..

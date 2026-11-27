@@ -77,7 +77,9 @@ fn analyse_file(path: &Path) -> Result<(rbl_analysis::Analysis, rbl_anlz::Rekord
         creator.reserve(frames);
     }
     let cap = (DECODE_CAP_SECS * f64::from(rate)) as usize;
-    let mut head: Vec<f32> = Vec::with_capacity(cap.min(1 << 24));
+    // sized up front when the length is known, so a long file doesn't double the buffer past the cap
+    let start = stream.expected_frames().map_or(1 << 22, |f| usize::try_from(f).unwrap_or(cap)).min(cap);
+    let mut head: Vec<f32> = Vec::with_capacity(start);
     let mut builder: Option<rbl_analysis::waveform::Builder> = None; // only for songs past the cap
     let mut past_head = false;
     while let Some((chunk, frames)) = stream.next_frames() {
@@ -88,14 +90,16 @@ fn analyse_file(path: &Path) -> Result<(rbl_analysis::Analysis, rbl_anlz::Rekord
             }
             continue;
         }
-        head.extend_from_slice(chunk);
-        if head.len() > cap {
+        if head.len() + chunk.len() > cap {
+            // past the analysed part: the rest only feeds the waveform
             let mut b = rbl_analysis::waveform::Builder::new(rate);
             b.push(&head);
+            b.push(chunk);
+            head.extend_from_slice(&chunk[..cap - head.len()]);
             builder = Some(b);
-            head.truncate(cap);
-            head.shrink_to_fit();
             past_head = true;
+        } else {
+            head.extend_from_slice(chunk);
         }
     }
     if head.is_empty() {
@@ -133,6 +137,9 @@ fn cache_key(path: &str) -> Option<String> {
 
 fn load_cached(base: &str) -> Option<SourceTrack> {
     let mut t: SourceTrack = serde_json::from_slice(&std::fs::read(format!("{base}.json")).ok()?).ok()?;
+    if !t.source_path.is_file() {
+        return None; // a decoded copy (see `decoded_copy`) that has been cleared away
+    }
     for ext in ["DAT", "EXT", "2EX"] {
         if let Ok(b) = std::fs::read(format!("{base}.{ext}")) {
             t.analysis.push((ext.to_string(), b));
@@ -152,6 +159,40 @@ fn save_cached(base: &str, t: &SourceTrack) {
     }
 }
 
+/// A FLAC copy of a song the analyser can't decode (Opus, WMA, …), made once with ffmpeg and
+/// kept with dubplate's saved analysis. It carries the song's own file name, so the stick shows
+/// that name; the library's file is only read.
+fn decoded_copy(src: &str) -> Result<String, String> {
+    let ff = crate::copy::ffmpeg_path().0.ok_or(
+        "this kind of file needs ffmpeg to go on a rekordbox stick: install ffmpeg (on Windows, the Install ffmpeg now button under 💾 Make a USB for the decks)",
+    )?;
+    let m = std::fs::metadata(src).map_err(|e| e.to_string())?;
+    let mtime = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
+    let h = sha1_smol::Sha1::from(format!("decoded-1\n{src}\n{}\n{mtime}", m.len())).digest().to_string();
+    let dir = join(&join(&paths::app_dir(), "decoded"), &h[..16]);
+    let stem = Path::new(src).file_stem().map_or_else(|| "song".into(), |s| s.to_string_lossy().into_owned());
+    let out = join(&dir, &format!("{stem}.flac"));
+    if paths::isfile(&out) {
+        return Ok(out);
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let part = join(&dir, ".decoding.flac");
+    let run = crate::copy::quiet(std::process::Command::new(ff).args(["-v", "error", "-nostdin", "-y", "-i"]))
+        .arg(format!("file:{}", paths::longp(src)))
+        .args(["-map", "0:a:0", "-map_metadata", "0", "-c:a", "flac", "-sample_fmt", "s16", "-f", "flac"])
+        .arg(format!("file:{}", paths::longp(&part)))
+        .output();
+    match run {
+        Ok(o) if o.status.success() => std::fs::rename(&part, &out).map_err(|e| e.to_string()).map(|()| out),
+        Ok(o) => {
+            let _ = std::fs::remove_file(&part);
+            let why = String::from_utf8_lossy(&o.stderr).lines().last().unwrap_or("").trim().to_string();
+            Err(format!("ffmpeg couldn't read it either ({why})"))
+        }
+        Err(e) => Err(format!("couldn't run ffmpeg ({e})")),
+    }
+}
+
 /// what goes on the stick for one song: its details and its analysis files. Analysed once,
 /// then taken from dubplate's saved analysis until the file changes.
 pub fn prepare(song: &Song) -> Result<SourceTrack, String> {
@@ -159,9 +200,17 @@ pub fn prepare(song: &Song) -> Result<SourceTrack, String> {
     if let Some(t) = key.as_deref().and_then(load_cached) {
         return Ok(t);
     }
-    let path = Path::new(&song.path);
     let tags = read_tags(&song.path);
-    let (analysis, waves, duration) = analyse_file(path)?;
+    // a format the analyser can't decode goes on the stick from a FLAC copy ffmpeg makes
+    let (source, (analysis, waves, duration)) = match analyse_file(Path::new(&song.path)) {
+        Ok(a) => (song.path.clone(), a),
+        Err(first) => {
+            let copy = decoded_copy(&song.path).map_err(|e| format!("{first}; {e}"))?;
+            let a = analyse_file(Path::new(&copy))?;
+            (copy, a)
+        }
+    };
+    let path = Path::new(&source);
     let beats: Vec<rbl_anlz::Beat> = analysis
         .tempo
         .beats
@@ -256,6 +305,25 @@ pub fn stick_path(raw: &str) -> String {
     paths::abspath(&paths::expanduser(raw))
 }
 
+/// A rekordbox stick manages its own files (it removes songs no playlist has any more), so it
+/// must never be, hold, or sit inside one of the library's folders.
+pub fn not_the_library(stick: &str, library: &[String]) -> Result<(), String> {
+    let real = |p: &str| std::fs::canonicalize(p).unwrap_or_else(|_| Path::new(&paths::abspath(p)).to_path_buf());
+    let s = real(stick);
+    for root in library.iter().filter(|r| !r.trim().is_empty()) {
+        let r = real(root);
+        let why = if s.starts_with(&r) {
+            format!("{stick} is part of your music library ({root})")
+        } else if r.starts_with(&s) {
+            format!("{stick} holds your music library ({root})")
+        } else {
+            continue;
+        };
+        return Err(format!("{why}. Pick the USB stick itself; dubplate never writes a rekordbox library into your music folders."));
+    }
+    Ok(())
+}
+
 /// dubplate's own folder on a stick, at its top level (never inside the library, so it stays
 /// put whatever happens to the library): the stick's id, the lock, an unfinished restore
 fn own_dir(stick: &str) -> std::path::PathBuf {
@@ -315,11 +383,13 @@ pub fn export_set(
     name: &str,
     songs: &[Song],
     convert: Option<CompatibilityFormat>,
+    library: &[String],
     progress: &(dyn Fn(Progress) + Sync),
 ) -> Result<Report, String> {
     if !paths::isdir(stick) {
         return Err(format!("{stick} isn't there (is the stick plugged in?)"));
     }
+    not_the_library(stick, library)?;
     let name = name.trim();
     if name.is_empty() {
         return Err("Give the playlist a name.".into());
@@ -363,6 +433,20 @@ pub fn export_set(
     }
     if tracks.is_empty() {
         return Err("None of the songs could be read, so the stick wasn't changed.".into());
+    }
+    // "leave them as they are" (FLAC decks) still can't play beyond 96 kHz or 24 bits
+    let mut too_fine: Vec<String> = Vec::new();
+    if convert.is_none() {
+        for t in &tracks {
+            if t.sample_rate > 96_000 || t.metadata.bit_depth > 24 {
+                too_fine.push(format!(
+                    "{}: {} kHz / {}-bit is more than any deck plays; choose AIFF to have it converted",
+                    t.title,
+                    f64::from(t.sample_rate) / 1000.0,
+                    t.metadata.bit_depth
+                ));
+            }
+        }
     }
     let n = tracks.len();
     let playlist = SourcePlaylist { id: playlist_id(name), name: name.to_string(), track_indices: (0..n).collect(), ..Default::default() };
@@ -432,16 +516,16 @@ pub fn export_set(
         verified: report.verified,
         backup,
         errors: errors.into_iter().chain(left_out).collect(),
-        warnings: report
-            .warnings
-            .iter()
+        warnings: too_fine
+            .into_iter()
+            .chain(report.warnings.iter()
             .map(|w| {
                 let why = match w.reason.as_str() {
                     "analysis-stale" => "its analysis on the stick is from an older version of the file",
                     r => r,
                 };
                 format!("{}: {why}{}", w.title, w.detail.as_deref().map(|d| format!(" ({d})")).unwrap_or_default())
-            })
+            }))
             .collect(),
     })
 }
@@ -895,9 +979,24 @@ fn durable_mark(path: &Path) -> std::io::Result<()> {
 
 /// remove finished restores' leftovers (`restore-done-*`); one that can't go yet is left for
 /// next time (a fresh name is used each time, so it never blocks a restore)
-fn clear_done(own: &Path) {
+fn clear_done(stick: &str, own: &Path) {
     for e in std::fs::read_dir(own).into_iter().flatten().flatten() {
-        if e.file_name().to_string_lossy().starts_with("restore-done") {
+        if !e.file_name().to_string_lossy().starts_with("restore-done") {
+            continue;
+        }
+        // rbxport's safekeeping that couldn't be moved back last time goes back first
+        let root_name = std::fs::read_to_string(e.path().join("root")).unwrap_or_default();
+        let root_name = if root_name.trim() == ".PIONEER" { ".PIONEER" } else { "PIONEER" };
+        let rbx = Path::new(stick).join(root_name).join("rbxport");
+        let mut kept = true;
+        for k in std::fs::read_dir(e.path().join("old-rbxport")).into_iter().flatten().flatten() {
+            if rbxport_keep("rbxport", &k.file_name()) {
+                let to = rbx.join(k.file_name());
+                let moved = !to.exists() && rbl_core::durable::create_dir_all(&rbx).and_then(|()| durable_rename(&k.path(), &to)).is_ok();
+                kept &= moved;
+            }
+        }
+        if kept {
             let _ = rbl_core::durable::remove_tree(&e.path());
         }
     }
@@ -911,7 +1010,7 @@ fn clear_done(own: &Path) {
 /// the stick - if the library can't be put back.
 fn recover(stick: &str) -> Result<(), String> {
     let own = own_dir(stick);
-    clear_done(&own);
+    clear_done(stick, &own);
     let work = own.join("restore");
     if !work.is_dir() {
         return Ok(());
@@ -975,7 +1074,8 @@ pub fn sentence(s: &str) -> String {
 /// Put a backup of the stick's library back (what it holds now is backed up first). The music
 /// on the stick is left alone. The backup is copied onto the stick first and swapped in with
 /// renames, so a stick pulled out midway keeps a whole library.
-pub fn restore(stick: &str, which: &str) -> Result<Restored, String> {
+pub fn restore(stick: &str, which: &str, library: &[String]) -> Result<Restored, String> {
+    not_the_library(stick, library)?;
     if !valid_name(which) {
         return Err("no such backup".into());
     }
@@ -1155,7 +1255,7 @@ mod tests {
         // a song listed twice goes in once instead of failing the export
         let songs = &songs[..2];
         let twice = vec![songs[0].clone(), songs[1].clone(), songs[0].clone()];
-        let r = export_set(&st, "Friday", &twice, None, &|_| {}).unwrap();
+        let r = export_set(&st, "Friday", &twice, None, &[], &|_| {}).unwrap();
         assert_eq!((r.tracks, r.copied, r.reused), (2, 2, 0), "{r:?}");
         assert!(r.errors.is_empty(), "{r:?}");
         assert!(r.backup.is_none()); // nothing was on the stick yet
@@ -1166,7 +1266,7 @@ mod tests {
         let t = prepare(&songs[1]).unwrap();
         assert!((t.bpm_x100 as i32 - 12800).abs() <= 100, "bpm {}", t.bpm_x100);
         // a second set goes next to the first; the stick is backed up first
-        let r2 = export_set(&st, "Saturday", &songs[..1], None, &|_| {}).unwrap();
+        let r2 = export_set(&st, "Saturday", &songs[..1], None, &[], &|_| {}).unwrap();
         assert!(r2.backup.is_some());
         let files: Vec<_> = walk_files(&stick.join("Contents"));
         assert_eq!(files.len(), 2, "{files:?}");
@@ -1175,11 +1275,11 @@ mod tests {
         assert_eq!(v.playlists, 2, "{v:?}");
         assert_eq!(list_backups(&st).len(), 1);
         // the same set again changes nothing, and uses up no backup
-        let r3 = export_set(&st, "Saturday", &songs[..1], None, &|_| {}).unwrap();
+        let r3 = export_set(&st, "Saturday", &songs[..1], None, &[], &|_| {}).unwrap();
         assert!(r3.backup.is_none(), "{r3:?}");
         assert_eq!(list_backups(&st).len(), 1);
         // sending Friday again (any case) replaces it rather than adding a third
-        export_set(&st, "friday", &songs[1..], None, &|_| {}).unwrap();
+        export_set(&st, "friday", &songs[1..], None, &[], &|_| {}).unwrap();
         let v = rbl_export::verify(&stick).unwrap();
         assert!(v.is_ok() && v.playlists == 2, "{v:?}");
         let all = list_backups(&st);
@@ -1189,21 +1289,21 @@ mod tests {
         let moved = tmp.path().join("stick-on-another-day");
         std::fs::rename(&stick, &moved).unwrap();
         assert!(list_backups(&st).is_empty());
-        assert!(restore(&st, &first).is_err()); // not plugged in: an error, nothing written
+        assert!(restore(&st, &first, &[]).is_err()); // not plugged in: an error, nothing written
         assert!(!stick.exists());
         let mv = moved.to_string_lossy().into_owned();
         assert_eq!(list_backups(&mv), all);
         // the backup can be put back
-        let back = restore(&mv, &first).unwrap();
+        let back = restore(&mv, &first, &[]).unwrap();
         assert!(back.backup.is_some() && back.problem.is_none(), "{back:?}");
         let v = rbl_export::verify(&moved).unwrap();
         assert_eq!(v.playlists, 1);
         assert!(back.missing.is_empty(), "{back:?}"); // First stayed: Saturday holds it
         assert!(rbl_export::verify(&moved).unwrap().is_ok());
         assert!(!moved.join(".dubplate/restore").exists() && !moved.join(".dubplate/restore-done").exists());
-        assert!(restore(&mv, "../x").is_err() && restore(&mv, "nope").is_err() && restore(&mv, ".partial-x").is_err());
+        assert!(restore(&mv, "../x", &[]).is_err() && restore(&mv, "nope", &[]).is_err() && restore(&mv, ".partial-x", &[]).is_err());
         // and the stick takes more sets after a restore
-        export_set(&mv, "Sunday", songs, None, &|_| {}).unwrap();
+        export_set(&mv, "Sunday", songs, None, &[], &|_| {}).unwrap();
         let v = rbl_export::verify(&moved).unwrap();
         assert!(v.is_ok() && v.playlists == 2 && v.tracks == 2, "{v:?}");
     }
@@ -1241,6 +1341,73 @@ mod tests {
     }
 
     #[test]
+    fn a_stick_is_never_the_library() {
+        let tmp = tempfile::tempdir().unwrap();
+        let music = tmp.path().join("Music");
+        let stick = tmp.path().join("stick");
+        std::fs::create_dir_all(music.join("Artist")).unwrap();
+        std::fs::create_dir_all(&stick).unwrap();
+        let lib = vec![music.to_string_lossy().into_owned()];
+        let p = |x: &Path| x.to_string_lossy().into_owned();
+        assert!(not_the_library(&p(&stick), &lib).is_ok());
+        assert!(not_the_library(&p(&music), &lib).is_err()); // the library itself
+        assert!(not_the_library(&p(&music.join("Artist")), &lib).is_err()); // inside it
+        assert!(not_the_library(&p(tmp.path()), &lib).is_err()); // holding it
+        assert!(not_the_library(&p(&stick), &[String::new()]).is_ok());
+        let songs = vec![Song { path: p(&music.join("x.wav")), artist: String::new(), title: String::new(), album: String::new() }];
+        assert!(export_set(&p(&music), "Set", &songs, None, &lib, &|_| {}).unwrap_err().contains("music library"));
+        assert!(!music.join("PIONEER").exists() && !music.join(".dubplate").exists());
+    }
+
+    /// a test sound made with ffmpeg (None when ffmpeg isn't installed)
+    fn ffmpeg_song(path: &Path, args: &[&str]) -> Option<String> {
+        let ff = crate::copy::ffmpeg_path().0?;
+        let ok = std::process::Command::new(ff)
+            .args(["-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=6"])
+            .args(args)
+            .arg(path)
+            .status()
+            .ok()?
+            .success();
+        ok.then(|| path.to_string_lossy().into_owned())
+    }
+
+    #[test]
+    fn every_kind_of_song_goes_on_the_stick() {
+        let _g = crate::paths::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("LOCALAPPDATA", tmp.path().join("app"));
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let mk = |name: &str, args: &[&str]| ffmpeg_song(&src.join(name), args);
+        let Some(ogg) = mk("A - Vorbis.ogg", &["-c:a", "libvorbis"]) else {
+            eprintln!("ffmpeg isn't installed: skipped");
+            return;
+        };
+        let opus = mk("A - Opus.opus", &["-c:a", "libopus"]).unwrap();
+        let aac = mk("A - Aac.m4a", &["-c:a", "aac"]).unwrap();
+        let hires = mk("A - Hires.flac", &["-ar", "192000", "-sample_fmt", "s32"]).unwrap();
+        let song = |p: &String| Song { path: p.clone(), artist: "A".into(), title: String::new(), album: String::new() };
+        let stick = tmp.path().join("stick");
+        std::fs::create_dir_all(&stick).unwrap();
+        let st = stick.to_string_lossy().into_owned();
+        let set: Vec<Song> = [&ogg, &opus, &aac].into_iter().map(song).collect();
+        let r = export_set(&st, "Formats", &set, parse_convert("aiff"), &[], &|_| {}).unwrap();
+        assert!(r.errors.is_empty(), "{r:?}");
+        assert_eq!((r.tracks, r.converted), (3, 3), "{r:?}");
+        let v = rbl_export::verify(&stick).unwrap();
+        assert!(v.is_ok() && v.tracks == 3 && v.analysis_present == 3, "{v:?}");
+        // the Opus song is on the stick under its own name
+        let names: Vec<String> = walk(&stick.join("Contents")).iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        assert!(names.iter().any(|n| n.starts_with("A - Opus")), "{names:?}");
+        // the library's files are as they were
+        assert!(Path::new(&opus).is_file() && Path::new(&ogg).is_file());
+        // left as they are: a file no deck plays is pointed out
+        let r = export_set(&st, "Hires", &[song(&hires)], None, &[], &|_| {}).unwrap();
+        assert!(r.warnings.iter().any(|w| w.contains("192 kHz")), "{r:?}");
+    }
+
+    #[test]
     fn which_device_a_folder_is_on() {
         let info = "22 1 8:2 / / rw,relatime shared:1 - ext4 /dev/sda2 rw\n\
                     90 22 8:17 / /media/me/DJ\\040STICK rw,nosuid shared:50 - vfat /dev/sdb1 rw,uid=1000\n\
@@ -1272,7 +1439,7 @@ mod tests {
         let stick = tmp.path().join("stick");
         std::fs::create_dir_all(&stick).unwrap();
         let st = stick.to_string_lossy().into_owned();
-        export_set(&st, "One", &songs[..1], None, &|_| {}).unwrap();
+        export_set(&st, "One", &songs[..1], None, &[], &|_| {}).unwrap();
         let mut made = Vec::new();
         for _ in 0..14 {
             let b = backup(&st).unwrap().unwrap();
@@ -1285,12 +1452,12 @@ mod tests {
         assert_eq!(all[0], *made.last().unwrap());
         // restoring the oldest while the list is full: the backup made first doesn't push it out
         let oldest = all.last().unwrap().clone();
-        restore(&st, &oldest).unwrap();
+        restore(&st, &oldest, &[]).unwrap();
         assert!(list_backups(&st).contains(&oldest));
         assert!(list_backups(&st).len() <= KEEP_BACKUPS + 1);
         // an export that changes nothing leaves the backups as they were
         let now = list_backups(&st);
-        export_set(&st, "One", &songs[..1], None, &|_| {}).unwrap();
+        export_set(&st, "One", &songs[..1], None, &[], &|_| {}).unwrap();
         assert_eq!(list_backups(&st), now);
         assert!(stick.join("PIONEER/rekordbox/export.pdb").is_file());
         // a song that can't be read is left out and listed; the rest go on
@@ -1298,7 +1465,7 @@ mod tests {
         std::fs::write(&bad, b"RIFF....WAVEfmt nonsense").unwrap();
         let mut set = songs[..2].to_vec();
         set.push(Song { path: bad.to_string_lossy().into_owned(), artist: "Broken".into(), title: "Song".into(), album: String::new() });
-        let r = export_set(&st, "Two", &set, None, &|_| {}).unwrap();
+        let r = export_set(&st, "Two", &set, None, &[], &|_| {}).unwrap();
         assert_eq!(r.tracks, 2);
         assert_eq!(r.errors.len(), 1, "{r:?}");
         // a restore cut off between its renames: the next run puts the old library back first
@@ -1329,6 +1496,14 @@ mod tests {
         recover(&st).unwrap();
         assert!(!pioneer.join("rbxport").exists() && !work.exists());
         std::fs::rename(stick.join("keep-rbxport"), pioneer.join("rbxport")).unwrap();
+        // rbxport's safekeeping left in a finished restore's folder goes back to the stick
+        let left = stick.join(".dubplate/restore-done-9/old-rbxport/recovered-1");
+        std::fs::create_dir_all(&left).unwrap();
+        std::fs::write(left.join("theirs.bin"), b"keep me").unwrap();
+        recover(&st).unwrap();
+        assert_eq!(std::fs::read(pioneer.join("rbxport/recovered-1/theirs.bin")).unwrap(), b"keep me");
+        assert!(!stick.join(".dubplate/restore-done-9").exists());
+        rbl_core::durable::remove_tree(&pioneer.join("rbxport/recovered-1")).unwrap();
         // ...and one whose swap had finished stands (only its leftovers go)
         let done = stick.join(".dubplate/restore-done-123");
         std::fs::create_dir_all(done.join("old-rekordbox")).unwrap();
@@ -1341,13 +1516,13 @@ mod tests {
         let other = tmp.path().join("stick2");
         std::fs::create_dir_all(&other).unwrap();
         let o = other.to_string_lossy().into_owned();
-        export_set(&o, "A", &songs[..2], None, &|_| {}).unwrap();
+        export_set(&o, "A", &songs[..2], None, &[], &|_| {}).unwrap();
         // replacing a set: the new song counts as copied even though another left the stick
-        let r = export_set(&o, "A", &songs[1..], None, &|_| {}).unwrap();
+        let r = export_set(&o, "A", &songs[1..], None, &[], &|_| {}).unwrap();
         assert_eq!((r.tracks, r.copied, r.reused), (2, 1, 1), "{r:?}");
         let b = r.backup.unwrap();
         assert_eq!(walk_files(&other.join("Contents")).len(), 2);
-        let back = restore(&o, &b).unwrap();
+        let back = restore(&o, &b, &[]).unwrap();
         assert_eq!(back.missing.len(), 1, "{back:?}");
         assert!(back.problem.is_none(), "removed songs are reported as missing, not as a problem: {back:?}");
         // two sticks keep their own backups
@@ -1367,18 +1542,18 @@ mod tests {
         let old = tmp.path().join("stick3");
         std::fs::create_dir_all(&old).unwrap();
         let ol = old.to_string_lossy().into_owned();
-        export_set(&ol, "Old", &songs[..1], None, &|_| {}).unwrap();
+        export_set(&ol, "Old", &songs[..1], None, &[], &|_| {}).unwrap();
         std::fs::remove_file(old.join("PIONEER/rekordbox/exportLibrary.db")).unwrap();
         let _ = std::fs::remove_dir_all(old.join("PIONEER/rbxport"));
         assert!(has_library(&ol));
-        let r = export_set(&ol, "New", &songs[1..2], None, &|_| {}).unwrap();
+        let r = export_set(&ol, "New", &songs[1..2], None, &[], &|_| {}).unwrap();
         let first = r.backup.expect("the old library was backed up");
-        let back = restore(&ol, &first).unwrap();
+        let back = restore(&ol, &first, &[]).unwrap();
         assert!(back.problem.is_none(), "{back:?}");
         assert!(!old.join("PIONEER/rekordbox/exportLibrary.db").exists());
         // nothing readable: an error, and no backup used up
         let n = list_backups(&st).len();
-        assert!(export_set(&st, "Three", &set[2..], None, &|_| {}).is_err());
+        assert!(export_set(&st, "Three", &set[2..], None, &[], &|_| {}).is_err());
         assert_eq!(list_backups(&st).len(), n);
     }
 }

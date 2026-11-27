@@ -59,7 +59,7 @@
 <p>Then open <code>http://computer-name:8765</code> (or the computer's address) on the other device.</p>
 <ul>
 <li>Anyone on your network can then copy songs from your library. They can't delete anything, and only songs from your library can be copied, never other files on the computer.</li>
-<li>Settings and stick restores still only work on the computer itself.</li>
+<li>Settings, rekordbox sticks (making and restoring) and updates only work on the computer itself.</li>
 <li>Behind a reverse proxy with its own web address, allow that name too: <code>--allow-host dubplate.example.com</code>.</li>
 </ul>
 
@@ -70,7 +70,7 @@
 <li><strong>Song analysis</strong> for rekordbox sticks, so each song is analysed once.</li>
 </ul>
 <p>These live in <code>%LOCALAPPDATA%\dubplate</code> on Windows and <code>~/.cache/dubplate</code> on Linux. Deleting that folder resets dubplate.</p>
-<p>Rekordbox stick backups are kept separately, where cleaning tools leave them alone: <code>%LOCALAPPDATA%\dubplate\stick-backups</code> on Windows, <code>~/.local/share/dubplate/stick-backups</code> on Linux.</p>
+<p>Rekordbox stick backups are kept in <code>~/.local/share/dubplate/stick-backups</code> on Linux, apart from the cache so cleaning tools leave them alone. On Windows they're in <code>%LOCALAPPDATA%\dubplate\stick-backups</code>, inside the folder above: <strong>resetting dubplate on Windows deletes your stick backups too</strong>, so move that folder somewhere safe first if you want to keep them.</p>
 <p>Nothing extra is written into the places you copy to, apart from a rekordbox stick's own library and dubplate's small <code>.dubplate</code> folder on it.</p>
 <nav class="next" aria-label="More guides"><a href="missing-songs.html"><small>Previous</small><b>Missing songs</b></a><a href="terminal.html"><small>Next</small><b>Terminal</b></a></nav>
 </main>
