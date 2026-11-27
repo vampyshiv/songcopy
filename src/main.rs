@@ -212,6 +212,7 @@ fn main() {
         "copy",
         "find",
         "update",
+        "restore-stick",
         "match-json",
         "help",
         "-h",
@@ -276,12 +277,23 @@ fn run(cli: Cli) -> i32 {
                     for b in &all {
                         println!("  {b}");
                     }
-                    println!("Put one back with: dubplate restore-stick \"{stick}\" \"<backup>\"");
+                    let shown = stick.trim_end_matches(['/', '\\']);
+                    let shown = if shown.is_empty() { "/" } else { shown }; // a trailing \ would escape the quote on Windows
+                    println!("Put one back with: dubplate restore-stick \"{shown}\" \"<backup>\"");
                     0
                 }
                 Some(b) => match rekordbox::restore(&stick, &b) {
-                    Ok(()) => {
-                        println!("Put back the stick's library from {b} (what it held just now is backed up too).");
+                    Ok(r) => {
+                        println!("Put back the stick's library from {b}.");
+                        if let Some(n) = r.backup {
+                            println!("What it held just now is backed up too ({n}).");
+                        }
+                        if !r.missing.is_empty() {
+                            println!("{} song(s) in the restored playlists were taken off the stick by a later export; send those sets again to put them back:", r.missing.len());
+                            for m in r.missing.iter().take(20) {
+                                println!("  {m}");
+                            }
+                        }
                         0
                     }
                     Err(e) => {
@@ -635,7 +647,8 @@ fn cli_run(music: &str, list: &str, prefer: &str, strict: bool, copy: Option<Cop
         let on = c.on;
         let r = rekordbox::export_set(&dest, &name, &songs, rekordbox::parse_convert(&a.convert), &|p| {
             if on {
-                print!("\r  {:<10} {}/{}  {:<50}", p.stage, p.done, p.total, p.current.chars().take(50).collect::<String>());
+                let count = if p.total > 0 { format!("{}/{}", p.done, p.total) } else { String::new() };
+                print!("\r  {:<10} {count:<9} {:<50}", p.stage, p.current.chars().take(50).collect::<String>());
                 let _ = std::io::stdout().flush();
             }
         });

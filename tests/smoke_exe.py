@@ -3,8 +3,10 @@
 
 Makes a fake library (including a path longer than Windows' 260-character limit),
 then runs the real .exe on it: find, copy, and copy again (must skip what's already there).
+Then a rekordbox stick from two real WAV files, a second set on it, and its backups.
 """
 import os
+import struct
 import subprocess
 import sys
 import tempfile
@@ -61,4 +63,40 @@ r = run("copy", lst, dest, "--music", lib)
 assert "3 already copied" in r.stdout and "Nothing new to copy" in r.stdout, "memory failed"
 for rel in songs.values():   # the library is untouched
     assert os.path.exists(winlong(os.path.join(lib, *rel.split("/"))))
+
+# ---- a rekordbox stick (analysis, databases, backups) from real audio
+def click_wav(path, bpm, seconds=12, rate=44100):
+    beat = int(60 / bpm * rate)
+    frames = bytearray()
+    for i in range(rate * seconds):
+        v = (20000 if (i // 20) % 2 == 0 else -20000) if i % beat < 400 else 0
+        frames += struct.pack("<h", v)
+    with open(path, "wb") as fh:
+        fh.write(b"RIFF" + struct.pack("<I", 36 + len(frames)) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16)
+                 + b"data" + struct.pack("<I", len(frames)) + frames)
+
+
+rblib = os.path.join(tmp, "RbMusic", "Tester")
+os.makedirs(rblib)
+for title, bpm in (("Steady", 120), ("Faster", 128)):
+    click_wav(os.path.join(rblib, f"Tester - {title}.wav"), bpm)
+rblist = os.path.join(tmp, "Friday.txt")
+with open(rblist, "w", encoding="utf-8") as fh:
+    fh.write("Tester - Steady\nTester - Faster\n")
+stick = os.path.join(tmp, "stick")
+os.makedirs(stick)
+music2 = os.path.join(tmp, "RbMusic")
+r = run("copy", rblist, stick, "--rekordbox", "--music", music2)
+assert r.returncode == 0 and "Done: 2 songs in the playlist Friday" in r.stdout, "rekordbox export failed"
+assert os.path.isfile(os.path.join(stick, "PIONEER", "rekordbox", "export.pdb"))
+assert os.path.isfile(os.path.join(stick, "PIONEER", "rekordbox", "exportLibrary.db"))
+r = run("copy", rblist, stick, "--rekordbox", "--name", "Saturday", "--music", music2)
+assert r.returncode == 0 and "2 already on the stick" in r.stdout and "backed up" in r.stdout, "second set failed"
+r = run("restore-stick", stick)
+assert r.returncode == 0 and "Backups of" in r.stdout, "no backups listed"
+backup_name = r.stdout.splitlines()[1].strip()
+r = run("restore-stick", stick, backup_name)
+assert r.returncode == 0 and "Put back" in r.stdout, "restore failed"
+for f in os.listdir(rblib):  # the library is untouched
+    assert os.path.getsize(os.path.join(rblib, f)) > 1000
 print("SMOKE TEST PASSED")

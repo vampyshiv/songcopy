@@ -482,7 +482,7 @@ pub fn convert_one(src: &str, dst: &str, fmt: &str) -> (&'static str, String, St
         .unwrap_or(44100);
     let rate = if matches!(rate, 44100 | 48000) {
         rate
-    } else if rate % 48000 == 0 {
+    } else if rate.is_multiple_of(48000) {
         48000
     } else {
         44100

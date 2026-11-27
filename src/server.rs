@@ -49,8 +49,10 @@ struct Job {
 static JOBS: LazyLock<Mutex<HashMap<String, Job>>> = LazyLock::new(Default::default);
 
 /// a rekordbox stick being made
-#[derive(Serialize, Default, Clone)]
+#[derive(Serialize, Clone)]
 struct RbJob {
+    #[serde(skip)]
+    started: std::time::Instant,
     progress: rekordbox::Progress,
     finished: bool,
     error: Option<String>,
@@ -59,6 +61,9 @@ struct RbJob {
 static RB_JOBS: LazyLock<Mutex<HashMap<String, RbJob>>> = LazyLock::new(Default::default);
 /// one rekordbox export at a time: they're heavy, and two on one stick would fight
 static RB_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// dubplate restarts (update / settings) as soon as no stick is being written
+static RESTART_PENDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+const RESTARTING: &str = "dubplate is restarting (for an update or new settings); try again in a moment.";
 static FFMPEG_INSTALL: LazyLock<Mutex<(bool, String)>> = LazyLock::new(Default::default);
 
 struct Ctx {
@@ -317,13 +322,20 @@ fn handle(ctx: &Ctx, mut req: tiny_http::Request) {
             json!({"error": "Settings can only be changed on the computer dubplate is running on."}),
             false,
         )
+    } else if path == "/api/stick/restore" && !here {
+        (json!({"error": "A stick can only be restored on the computer dubplate is running on."}), false)
     } else {
         post(ctx, &path, &b)
     };
     let _ = req.respond(json_response(200, &v));
     if then_restart {
+        // never in the middle of writing a stick: wait for it, and start no new one meanwhile
+        RESTART_PENDING.store(true, std::sync::atomic::Ordering::SeqCst);
         std::thread::spawn(|| {
             std::thread::sleep(std::time::Duration::from_millis(400));
+            while RB_BUSY.load(std::sync::atomic::Ordering::SeqCst) {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
             update::restart();
         });
     }
@@ -796,13 +808,16 @@ fn post(ctx: &Ctx, path: &str, b: &Value) -> (Value, bool) {
         "/api/rekordbox" => start_rekordbox(ctx, b),
         "/api/stick/restore" => {
             let stick = paths::abspath(&paths::expanduser(s(b, "stick").trim()));
-            if RB_BUSY.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            if RESTART_PENDING.load(std::sync::atomic::Ordering::SeqCst) {
+                json!({"error": RESTARTING})
+            } else if RB_BUSY.swap(true, std::sync::atomic::Ordering::SeqCst) {
                 json!({"error": "A rekordbox stick is being written; wait for it to finish."})
             } else {
-                let r = rekordbox::restore(&stick, s(b, "backup"));
+                let r = std::panic::catch_unwind(|| rekordbox::restore(&stick, s(b, "backup")))
+                    .unwrap_or_else(|_| Err("dubplate hit a bug restoring the stick".into()));
                 RB_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
                 match r {
-                    Ok(()) => json!({"ok": true}),
+                    Ok(r) => json!({"ok": true, "backup": r.backup, "missing": r.missing}),
                     Err(e) => json!({"error": e}),
                 }
             }
@@ -1310,6 +1325,9 @@ fn start_rekordbox(ctx: &Ctx, b: &Value) -> Value {
     if songs.is_empty() {
         return json!({"error": "Nothing selected to put on the stick."});
     }
+    if RESTART_PENDING.load(std::sync::atomic::Ordering::SeqCst) {
+        return json!({"error": RESTARTING});
+    }
     if RB_BUSY.swap(true, std::sync::atomic::Ordering::SeqCst) {
         return json!({"error": "A rekordbox stick is already being made; wait for it to finish."});
     }
@@ -1319,8 +1337,9 @@ fn start_rekordbox(ctx: &Ctx, b: &Value) -> Value {
     );
     {
         let mut jobs = RB_JOBS.lock().unwrap();
-        jobs.retain(|_, j| !j.finished); // finished jobs were read by now
-        jobs.insert(id.clone(), RbJob { progress: rekordbox::Progress { stage: "starting".into(), total: songs.len(), ..Default::default() }, ..Default::default() });
+        // finished jobs are kept a while (another tab may still be showing one)
+        jobs.retain(|_, j| !j.finished || j.started.elapsed().as_secs() < 3600);
+        jobs.insert(id.clone(), RbJob { started: std::time::Instant::now(), progress: rekordbox::Progress { stage: "starting".into(), total: songs.len(), ..Default::default() }, finished: false, error: None, report: None });
     }
     let jid = id.clone();
     let count = songs.len();
@@ -1340,7 +1359,7 @@ fn start_rekordbox(ctx: &Ctx, b: &Value) -> Value {
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             rekordbox::export_set(&stick, &name, &songs, convert, &|p| set(&|j| j.progress = p.clone()))
         }))
-        .unwrap_or_else(|_| Err("dubplate hit a bug writing the stick; the stick's library was backed up first".into()));
+        .unwrap_or_else(|_| Err("dubplate hit a bug writing the stick. If it had a library, it was backed up first (see Backups below).".into()));
         set(&|j| {
             match &r {
                 Ok(rep) => j.report = Some(rep.clone()),

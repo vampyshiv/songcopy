@@ -2,6 +2,26 @@
 
 Each version's notes are shown in dubplate's update card before you install it.
 
+## 2.3.0
+
+**Rekordbox USB sticks, without rekordbox.** A third choice in step 3, **🎛 Rekordbox USB**,
+makes a stick the decks read like one made in rekordbox:
+
+- Your set is a **playlist in the deck's library browser**, in your list's order.
+- **BPM, key, beat grid and waveforms** for every song. Each song is analysed once and
+  remembered, so the next stick is quick.
+- **Several sets per stick.** A new name adds a playlist, and the same name replaces it.
+  Playlists already on the stick stay.
+- Songs older decks can't play (FLAC, ALAC, Ogg, hi-res) are **converted for the stick**:
+  AIFF, MP3 320 or WAV. Or leave them as FLAC for decks that play it. No ffmpeg needed.
+- The stick's library is **backed up before every export**. **Restore…** under the stick (or
+  `dubplate restore-stick`) puts it back.
+
+Terminal: `dubplate copy set.csv E:\ --rekordbox [--name NAME] [--convert aiff|mp3|wav|none]`.
+
+Built on [rbxport](https://github.com/chrisle/rbxport)'s engine. It's tested on the CDJ-3000,
+so **try a stick on your decks before a gig.**
+
 ## 2.2.0
 
 **Find missing songs on Soulseek.** If you use slskd (a Soulseek client), connect it in the

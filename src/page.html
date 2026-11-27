@@ -112,6 +112,7 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
 <ul>
 <li><b>Copy to a folder</b> (e.g. your Traktor music folder): the files are copied exactly as they are.</li>
 <li><b>Make a USB for the decks</b>: one numbered playlist folder on the stick. Anything older CDJs/XDJs can't play (FLAC, Opus, ALAC, hi-res) is converted to AIFF or MP3; tags and artwork are kept. On the deck, browse the stick in its <b>folder</b> view.</li>
+<li><b>Rekordbox USB</b>: a stick the decks read like one made in rekordbox. Your set becomes a playlist in the deck's library browser (under PLAYLIST) with BPM, key, beat grids and waveforms, without rekordbox. Each song is analysed once and remembered. Several sets can share a stick, and sending a set with the same name again replaces it. The stick's library is backed up before every export, and <b>Restore…</b> puts a backup back. Try a stick on your decks before a gig.</li>
 </ul>
 <h3>Finding missing songs on Soulseek</h3>
 <p>If you use <a href="https://github.com/slskd/slskd" target="_blank" rel="noopener">slskd</a> (a Soulseek client), connect it in <b>⚙ Settings</b>. Then <b>🔎 Find on Soulseek</b> looks for the red and purple songs. dubplate picks the best file for each (the right version, good quality, someone who can send it soon) and shows it under the song, with other choices in a menu. Untick or change any, then click <b>Download</b>. When the downloads finish, dubplate reads your library again and they turn green, ready to copy. Add slskd's download folder under <b>Also look in</b> so they're found.</p>
@@ -120,7 +121,7 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
 <h3>It remembers what it copied</h3>
 <p>Each destination has its own memory. Songs already copied to that folder (or that stick) are hidden, so after you've added missing songs to your library you can load the same list again and only the new ones are copied. A song you copied to your DJ folder still shows up for the USB, because the stick has its own memory. Click <b>✓ already copied</b> to see them, and tick one to copy it again.</p>
 <h3>It never changes your library</h3>
-<p>dubplate only ever copies. It never moves, deletes or overwrites a file: if a file with the same name is already there it's left alone, and a different one gets " (2)" added. Its own memory and settings live in <code id="appdir">its settings folder</code>.</p>
+<p>dubplate only ever copies. It never moves, deletes or overwrites a file: if a file with the same name is already there it's left alone, and a different one gets " (2)" added. (On a rekordbox stick dubplate keeps the stick's library tidy as rekordbox does: a song that's in no playlist on the stick any more has its copy on the stick removed. Your library is never touched, and the stick is backed up first.) Its own memory and settings live in <code id="appdir">its settings folder</code>.</p>
 </details>
 
 <section class="card hidden" id="setcard">
@@ -283,10 +284,18 @@ async function rbBackups(){const stick=$('#dest').value.trim(),el=$('#rbbackups'
  el.innerHTML=r.backups.length?`Backups of this stick's library <button type="button" class="tip" data-tip="Made automatically before every rekordbox export to this stick (the newest 10 are kept, in dubplate's folder on this computer). Restore puts the stick's playlists and library back as they were then; what it holds now is backed up first. The music files on the stick aren't touched.">?</button>: <select id="rbpick">${r.backups.map(b=>`<option>${esc(b)}</option>`).join('')}</select> <button type="button" id="rbrestore">Restore…</button> <span id="rbrmsg"></span>`
   :(r.rekordbox?'This stick already has a rekordbox library: it is backed up before dubplate adds to it.':'');
  const b=$('#rbrestore');if(!b)return;
- b.onclick=async()=>{if(b.dataset.sure!=='1'){b.dataset.sure='1';b.textContent='Yes, put it back';$('#rbrmsg').textContent=' The stick\'s playlists go back to how they were at '+$('#rbpick').value+'.';return}
-  b.disabled=true;const x=await api('/api/stick/restore',{stick,backup:$('#rbpick').value});
-  $('#rbrmsg').innerHTML=x.error?`<span style="color:var(--bad)">${esc(x.error)}</span>`:' <span style="color:var(--good)">✓ Restored.</span>';
-  if(!x.error)setTimeout(rbBackups,1500);else b.disabled=false}}
+ let armed=null; // the stick and backup the confirmation was shown for
+ const disarm=()=>{armed=null;b.textContent='Restore…';$('#rbrmsg').textContent=''};
+ $('#rbpick').onchange=disarm;
+ b.onclick=async()=>{const want={stick:$('#dest').value.trim(),backup:$('#rbpick').value};
+  if(want.stick!==stick){rbBackups();return} // the box shows another stick now
+  if(!armed||armed.backup!==want.backup){armed=want;b.textContent='Yes, put it back';$('#rbrmsg').textContent=' The stick\'s playlists go back to how they were at '+want.backup+'.';return}
+  b.disabled=true;let x;try{x=await api('/api/stick/restore',armed)}catch(e){x={error:'dubplate didn\'t answer.'}}
+  if(x.error){$('#rbrmsg').innerHTML=`<span style="color:var(--bad)">${esc(x.error)}</span>`;b.disabled=false;disarm();return}
+  const miss=x.missing||[];
+  $('#done').innerHTML=`<div class="banner ${miss.length?'bad':'ok'}"><b>Restored</b> the stick's library from ${esc(armed.backup)}.`+(x.backup?` <span class="small">What it held just now is backed up too (${esc(x.backup)}).</span>`:'')+
+   (miss.length?`<br>${miss.length} song${miss.length>1?'s':''} in the restored playlists ${miss.length>1?'were':'was'} taken off the stick by a later export - send ${miss.length>1?'those sets':'that set'} again to put ${miss.length>1?'them':'it'} back:<br><span class="small">${miss.slice(0,20).map(esc).join('<br>')}${miss.length>20?'<br>…':''}</span>`:'')+'</div>';
+  rbBackups()}}
 // songs already copied to the chosen folder (earlier runs) are hidden
 let CHECKT=null,CHECKN=0;
 async function checkCopied(){if(rbMode()){CHECKN++;RESULTS.forEach(r=>{if(r.copied){r.copied=false;r.checked=r.status==='found'||r.status==='guess'}});render();return} // a rekordbox playlist holds every ticked song
@@ -381,11 +390,11 @@ $('#dlmissing').onclick=()=>{const rows=[['Row','Song','Problem','What your libr
 async function ls(p){const r=await api('/api/ls?path='+encodeURIComponent(p));const b=$('#browser');b.style.display='block';
  b.innerHTML=(r.parent!=null?`<div data-p="${esc(r.parent)}">⬆ Up one level</div>`:'')+(r.path?`<div class="small" style="cursor:default">In <b>${esc(r.path)}</b> (${r.free} free) · click a folder to open it</div><div data-use="${esc(r.path)}" style="color:var(--acc)">✓ ${rbMode()?'Use this stick':'Copy into this folder'}</div>`:`<div class="small" style="cursor:default">This PC: pick a drive</div>`)+(r.error?`<div class="small" style="color:var(--bad)">${esc(r.error)}</div>`:'')+r.dirs.map(d=>`<div data-p="${esc(d.path)}">📁 ${esc(d.name)}</div>`).join('')}
 $('#browse').onclick=()=>{const b=$('#browser');if(b.style.display==='block'){b.style.display='none';return}ls($('#dest').value||'~')};
-$('#browser').onclick=e=>{const d=e.target.closest('div');if(!d)return;if(d.dataset.use){$('#dest').value=DEST[MODE]=d.dataset.use;$('#browser').style.display='none';remember();checkCopied()}else if(d.dataset.p!=null){if(d.dataset.p)$('#dest').value=DEST[MODE]=d.dataset.p;ls(d.dataset.p)}};
+$('#browser').onclick=e=>{const d=e.target.closest('div');if(!d)return;if(d.dataset.use){$('#dest').value=DEST[MODE]=d.dataset.use;$('#browser').style.display='none';remember();checkCopied();if(rbMode())rbBackups()}else if(d.dataset.p!=null){if(d.dataset.p)$('#dest').value=DEST[MODE]=d.dataset.p;ls(d.dataset.p);if(rbMode())rbBackups()}};
 ['dest','folders','number','playlist'].forEach(k=>$('#'+k).addEventListener('change',remember));
 // the box belongs to the tab that's open: only typing / browsing changes that tab's folder
 $('#dest').addEventListener('input',()=>{DEST[MODE]=$('#dest').value});
-$('#dest').addEventListener('change',()=>{DEST[MODE]=$('#dest').value;remember()});
+$('#dest').addEventListener('change',()=>{DEST[MODE]=$('#dest').value;remember();if(rbMode())rbBackups()});
 $('#go').onclick=async()=>{const dest=$('#dest').value.trim();if(!dest){$('#dest').focus();$('#gohint').textContent=stickMode()?'Pick your USB stick first.':'Type or browse to a folder first.';return}
  $('#gohint').textContent='';
  if(rbMode())return makeRekordbox(dest);
@@ -405,7 +414,7 @@ $('#go').onclick=async()=>{const dest=$('#dest').value.trim();if(!dest){$('#dest
   if(j.errors.length)h+=`<div class="banner bad"><b>${j.errors.length} couldn't be copied:</b><br>`+j.errors.map(e=>esc(e.src)+'<br><span class="small">'+esc(e.msg)+'</span>').join('<br>')+'</div>';
   if(miss)h+=`<div class="banner bad">${miss} song${miss>1?'s were':' was'} not in your library (or only in a different version). Use the download button above to save the list.</div>`;
   $('#done').innerHTML=h;$('#go').disabled=false};tick()};
-const STAGES={starting:'Starting',analysing:'Analysing songs (tempo, key, waveforms)',checking:'Checking the stick',copying:'Copying / converting songs',database:'Writing the stick\'s library',verifying:'Checking what was written',publishing:'Finishing',done:'Done'};
+const STAGES={starting:'Starting',recovering:'Finishing an export that was interrupted',planning:'Planning',converting:'Converting songs for older decks',analysing:'Analysing songs (tempo, key, waveforms)',checking:'Checking the stick',copying:'Copying / converting songs',database:'Writing the stick\'s library',verifying:'Checking what was written',publishing:'Finishing',done:'Done'};
 async function makeRekordbox(stick){
  const name=$('#rb_name').value.trim()||LISTNAME;$('#rb_name').value=name;
  const items=RESULTS.map((r,i)=>[r,i+1]).filter(([r])=>r.checked&&r.file).sort((a,b)=>a[1]-b[1]).map(([r])=>({src:r.file.path,rel:r.file.rel}));

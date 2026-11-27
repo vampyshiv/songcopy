@@ -11,7 +11,11 @@ and get.
 
 **It only ever copies.** It never moves, deletes or overwrites anything. If a file is
 already in the destination it's skipped, and a different file with the same name gets
-" (2)" added rather than being replaced.
+" (2)" added rather than being replaced. (The one place dubplate manages files is the library
+on a [rekordbox stick](#rekordbox-usb-sticks), as rekordbox does; it's backed up first.)
+
+It can also make **rekordbox USB sticks** for Pioneer decks, with playlists, BPM, key, beat
+grids and waveforms, without rekordbox.
 
 A single small program for Windows and Linux, written in Rust. Nothing else to install,
 and it updates itself.
@@ -20,6 +24,7 @@ and it updates itself.
 
 [Install](#install) · [Quick start](#quick-start) · [Using the web page](#using-the-web-page) ·
 [Terminal](#terminal) · [USB sticks for CDJs/XDJs](#usb-sticks-for-cdjs--xdjs) ·
+[Rekordbox USB sticks](#rekordbox-usb-sticks) ·
 [Missing songs on Soulseek](#finding-missing-songs-on-soulseek) · [Settings](#settings) ·
 [What it remembers](#what-it-remembers) · [Windows](#windows-music-on-a-home-server) ·
 [How matching works](#how-matching-works) · [Troubleshooting](#troubleshooting) ·
@@ -103,14 +108,16 @@ Drop a file onto the page, or click to choose one, or paste the list:
 
 ### 3. Where should they go?
 
-Two choices, each with its own destination, remembered separately:
+Three choices, each with its own destination, remembered separately:
 
 - **📁 Copy to a folder.** For your DJ software (e.g. the folder Traktor watches) or any
   folder. Files are copied exactly as they are. Options:
   - **Keep Artist / Album folders**: recreate your library's folders. Off: one flat folder.
   - **Number files in list order**: `007 - …`, so the folder sorts in your list's order.
   - **Also make a playlist file**: `playlist.m3u8`, for importing into DJ or music apps.
-- **💾 Make a USB for the decks.** See [USB sticks](#usb-sticks-for-cdjs--xdjs).
+- **💾 Make a USB for the decks.** A plain-folder stick. See [USB sticks](#usb-sticks-for-cdjs--xdjs).
+- **🎛 Rekordbox USB.** A stick the decks read like one made in rekordbox. See
+  [Rekordbox USB sticks](#rekordbox-usb-sticks).
 
 Songs already copied to the chosen place are hidden; see [What it remembers](#what-it-remembers).
 
@@ -132,7 +139,9 @@ dubplate copy  mylist.xlsx /media/usb --number --playlist --prefer mp3
 | `--any-version` | copy the version you have when the exact one (e.g. Extended Mix) isn't there |
 | `--usb` | USB for CDJs/XDJs: numbered playlist folder, converts what decks can't play |
 | `--usb-format aiff\|mp3` | what `--usb` converts to (default `aiff`) |
-| `--name NAME` | playlist folder name for `--usb` (default: the list's file name) |
+| `--rekordbox` | make a [rekordbox stick](#rekordbox-usb-sticks): DEST is the stick, the list becomes a playlist |
+| `--convert aiff\|mp3\|wav\|none` | what `--rekordbox` converts songs older decks can't play to (default `aiff`) |
+| `--name NAME` | playlist (folder) name for `--usb` / `--rekordbox` (default: the list's file name) |
 | `--recopy` | also copy songs already copied to that destination on an earlier run |
 | `--dry-run` | show what would happen, copy nothing |
 | `--music PATH` | the library (default `~/Music`; on Windows the server's share) |
@@ -140,6 +149,12 @@ dubplate copy  mylist.xlsx /media/usb --number --playlist --prefer mp3
 | `serve --host 0.0.0.0 [--allow-host NAME]` | open the page from other devices; see [below](#opening-the-page-from-another-device) |
 
 Songs it can't find are printed in red and saved next to your list as `<list>-missing.csv`.
+
+```
+dubplate copy friday.csv E:\ --rekordbox             # a rekordbox playlist "friday" on the stick
+dubplate restore-stick E:                             # list the stick's backups
+dubplate restore-stick E: "2026-11-27 21.04.10"       # put one back
+```
 
 ## USB sticks for CDJs / XDJs
 
@@ -164,12 +179,67 @@ If ffmpeg isn't installed, files that need converting can't be copied, but MP3, 
 still are. With no ffprobe to check them, dubplate tells you how many WAV/AIFF files went
 over unchecked, since older decks only play those at 44.1/48 kHz, 16/24-bit.
 
-This is a plain-folder USB, not a rekordbox database USB, so there are no rekordbox
-playlists, waveforms or beat grids on the decks.
+This is a plain-folder USB: the decks show folders, with no BPM, waveforms or beat grids.
+For those, make a [rekordbox stick](#rekordbox-usb-sticks) instead.
 
 Copies are written to a hidden temporary file and only get their real name once they're
 completely on the stick. A stick pulled out, or a window closed mid-copy, never leaves a
 half-written song behind under its real name.
+
+## Rekordbox USB sticks
+
+Choose **🎛 Rekordbox USB** on the page (or `--rekordbox` in the terminal) and pick the
+stick itself (its top folder, e.g. `E:\` or `/media/you/USB`).
+
+The decks then read the stick as if rekordbox had made it:
+
+- **Your set is a playlist** in the deck's library browser (under PLAYLIST), in your list's
+  order.
+- **BPM, key, beat grid and waveforms** for every song: the overview and scrolling waveforms,
+  in colour on decks that draw colour.
+- **Several sets per stick.** A new playlist name adds a playlist next to the others. Sending
+  a set with the same name again replaces that playlist. Playlists already on the stick stay,
+  including ones made on a deck or by rekordbox.
+- **Songs older decks can't play are converted** for the stick: FLAC, ALAC, Ogg/Opus and
+  hi-res become AIFF (default), MP3 320 or WAV. Your library's files are never changed. Pick
+  "Leave them as they are" for decks that play FLAC (CDJ-2000NXS2, CDJ-3000 and newer).
+  No ffmpeg needed.
+- Use a **FAT32** stick (exFAT works on newer decks).
+
+**Analysis.** Each song is analysed once, the way rekordbox's Normal analysis does it: one
+tempo fitted to the whole song, then the beat grid, key and waveforms. That takes a few
+seconds a song, several songs at a time. The result is remembered, so the next stick with
+that song is quick. A song is analysed again only when its file changes. A file that can't
+be read is left out and listed; the rest of the set still goes on.
+
+**Backups.** Before anything is written, dubplate keeps a copy of the stick's library (its
+databases, not the music). The page lists them under the stick, each with **Restore…**;
+in the terminal, `dubplate restore-stick STICK`. Restore puts the stick's playlists back as
+they were, and first backs up what the stick holds now.
+
+- An export that fails, or that changes nothing, doesn't use up a backup.
+- dubplate keeps the **first** backup (the library from before dubplate first touched the
+  stick) plus the newest ones, 10 in all.
+- Backups belong to the stick, not to the drive letter it gets today. dubplate leaves a small
+  id file on it (`PIONEER/dubplate/stick-id`).
+- Restoring is only possible on the computer dubplate runs on, not from another device.
+
+**Managing the stick, as rekordbox does.** If a song is in no playlist on the stick any more
+(you re-sent a set without it), its copy on the stick is removed with the next export. These
+are only files dubplate put on the stick, never your library. A restore brings that set's
+playlist back, but not the removed copy: dubplate says which songs are missing, so you can
+send that set again.
+
+**Safe if interrupted.** The stick's databases are swapped in only once everything is
+written. A stick pulled out, or dubplate closed in the middle, leaves the stick as it was
+before (or finishes the job next time).
+
+**Which decks?** The stick format is the one rekordbox writes for Pioneer CDJ/XDJ decks
+(`export.pdb`, plus `exportLibrary.db` for the newest). rbxport's author tests it on a
+CDJ-3000. **Try a stick on your own decks before a gig.**
+
+This is built on [rbxport](https://github.com/chrisle/rbxport)'s engine by Chris Le (see
+[License](#license)).
 
 ## Finding missing songs on Soulseek
 
@@ -247,9 +317,12 @@ folder on a stick.
   go on a USB stick, and a set on the stick doesn't stop the same song going into another set.
 - A song is offered again if its copy has been deleted. To copy something again anyway,
   tick it on the page, or use `--recopy`.
-- Nothing extra is written into your destinations. The memory, settings and a saved copy of
+- Nothing extra is written into your destinations (apart from a rekordbox stick's own
+  library and its id file). The memory, settings, saved song analysis and a saved copy of
   your library's song list live in `~/.cache/dubplate/` (Windows:
   `%LOCALAPPDATA%\dubplate\`). Deleting that folder resets dubplate.
+- Rekordbox stick backups are kept in `~/.local/share/dubplate/stick-backups/` (Windows:
+  `%LOCALAPPDATA%\dubplate\stick-backups\`), not in a cache folder, so cleaners leave them be.
 - Settings and memory from **songcopy** (dubplate's old name) are brought over the first time
   dubplate runs; the old folder is left in place.
 
@@ -319,6 +392,14 @@ share. The saved list lives in `~/.cache/dubplate/` (or `%LOCALAPPDATA%\dubplate
 - **A song is red but you have it.** Click **Search the library myself…** under it, or check
   the spelling against your file names. Matching reads file and folder names, not tags.
   Then click **Rescan library** if you added it just now.
+- **The deck doesn't show the rekordbox playlist.** Pick the stick's top folder (`E:\`), not
+  a folder on it; use a FAT32 stick; eject it properly before unplugging. Choose the stick as
+  the deck's source and open **PLAYLIST**, not the folder view.
+- **A BPM is half or double.** The analysis fits one tempo to the whole song, the way
+  rekordbox's Normal analysis does, and a song that's mostly half-time can read as half the
+  tempo. dubplate can't correct a BPM by hand yet.
+- **"couldn't write the stick".** Nothing was changed (or the backup holds what was there).
+  The message says why; common causes are a full stick or one that's write-protected.
 - **A song is purple.** You don't have the exact version asked for (e.g. *Extended Mix*).
   Tick it to copy the version you do have, or pick another from its menu.
 - **Songs I expected are hidden.** They were already copied to that destination. Click
@@ -377,3 +458,9 @@ Versions before 2.0 were a single Python script; it's in the git history.
 Copyright (C) 2026 vampyshiv. dubplate is free software: you can redistribute it and/or
 modify it under the terms of the **GNU Affero General Public License, version 3 or (at your
 option) any later version**. See [LICENSE](LICENSE).
+
+The rekordbox stick engine comes from [rbxport](https://github.com/chrisle/rbxport)
+(copyright Chris Le and contributors, GNU General Public License version 2 or later). dubplate
+uses its `rbl-*` crates unchanged, pinned to release v1.10.0. dubplate's analysis code is
+adapted from rbxport's app. Both licences let the combined program be distributed under the
+AGPL-3.0-or-later.
