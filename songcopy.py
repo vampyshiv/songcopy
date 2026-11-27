@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# songcopy - copy a list of songs out of a music library
+# Copyright (C) 2026 vampyshiv
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# This program is free software under the GNU Affero General Public License v3 or later; see LICENSE.
 # =============================================================================
 # songcopy: copy a list of songs out of ~/Music into another folder
 # =============================================================================
@@ -1580,10 +1584,12 @@ $('#go').onclick=async()=>{const dest=$('#dest').value.trim();if(!dest){$('#dest
 # ----------------------------------------------------------------------------- Windows: find the music server
 
 # On Windows songcopy reads the music from the server's Samba share, \\<server>\home\Music.
-# It finds the server by itself on any network: last address that worked -> these names ->
+# It finds the server by itself on any network: the name/address that worked last time ->
 # a quick scan of this network -> asks you (and signs in to the share once).
-SERVER_NAMES = ["dahlias-den.local", "dahlias-den"]
-SHARE_MUSIC = "home\\Music"
+# Settings (%LOCALAPPDATA%\songcopy\settings.json, all optional):
+#   "server": name or address to try first (saved automatically, e.g. "myserver.local")
+#   "share_music": the music folder on the server, below \\<server>\ (default "home\\Music")
+SHARE_MUSIC_DEFAULT = "home\\Music"
 
 def settings_file():
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/.cache")
@@ -1607,7 +1613,8 @@ def save_settings(**kw):
         pass
 
 def unc_music(host):
-    return "\\\\" + host + "\\" + SHARE_MUSIC
+    share = load_settings().get("share_music") or SHARE_MUSIC_DEFAULT
+    return "\\\\" + host + "\\" + share.strip("\\/").replace("/", "\\")
 
 def port_open(host, port=445, timeout=0.6):
     import socket
@@ -1644,7 +1651,7 @@ def find_server(say=print):
     """-> (host whose music share opens, or None;  best guess to sign in to)"""
     from concurrent.futures import ThreadPoolExecutor
     memo = load_settings().get("server")
-    names = [h for h in dict.fromkeys([memo] + SERVER_NAMES) if h]
+    names = [h for h in dict.fromkeys([memo, os.environ.get("SONGCOPY_SERVER")]) if h]
     with ThreadPoolExecutor(8) as ex:
         reachable = [h for h, ok in zip(names, ex.map(port_open, names)) if ok]
     for h in reachable:
@@ -1675,10 +1682,10 @@ def windows_music_folder():
             return unc_music(host)
         print(f"\n  {C.Y}Couldn't open the music on the server automatically.{C.X}")
         print("  That's normal the first time on a new network: Windows needs you to sign in once.")
-        print("  Don't know the server's address? On the server, run:  stacks set-lan-ip")
-        print("  (it shows the address, and whether file sharing allows this network).\n")
+        print("  Type the server's name (e.g. myserver.local, it keeps working if its address changes)")
+        print("  or its address. On a Linux server,  hostname  shows the name and  hostname -I  the address.\n")
         try:
-            addr = input(f"  Server address{f' [Enter = {guess}]' if guess else ' (e.g. 192.168.1.50)'}: ").strip() or guess
+            addr = input(f"  Server name or address{f' [Enter = {guess}]' if guess else ''}: ").strip() or guess
         except EOFError:
             sys.exit("No server address given.")
         if not addr:

@@ -98,14 +98,16 @@ The music stays on the server; songs are copied over the network into a folder o
 Windows PC. **Download `songcopy.exe`** from the latest
 [release](../../releases) and double-click it. No Python needed. It:
 
-- finds the server by itself on whatever network you're on: the address that worked last
-  time, then `dahlias-den.local`, then a ~1 second scan of the network, then asks you,
+- finds the server by itself on whatever network you're on: the name or address that worked
+  last time, then a ~1 second scan of the network, then asks you. Type the server's
+  name (like `myserver.local`) when asked, and it keeps working when the address changes,
 - has you sign in to the share once (`net use`, remembered),
 - opens the page. The folder picker shows the Windows drives.
 
 It expects the music at `\\<server>\home\Music` (Samba share `home` = the server user's home
-folder). To use a different server name or share, change `SERVER_NAMES` / `SHARE_MUSIC` in
-`songcopy.py`. You can always point it somewhere else with `songcopy.exe --music D:\Music`.
+folder). Settings live in `%LOCALAPPDATA%\songcopy\settings.json`: `"server"` (name or
+address to try first) and `"share_music"` (e.g. `"music"` for `\\<server>\music`). You can
+always point it somewhere else with `songcopy.exe --music D:\Music`.
 
 Windows may warn that the app is from an "unknown publisher" (it isn't code-signed):
 click **More info → Run anyway**.
@@ -156,3 +158,9 @@ git tag v1.2.0 && git push origin v1.2.0
 ```
 
 Bump `VERSION` in `songcopy.py` first.
+
+## License
+
+Copyright (C) 2026 vampyshiv. songcopy is free software: you can redistribute it and/or
+modify it under the terms of the **GNU Affero General Public License, version 3 or (at your
+option) any later version**. See [LICENSE](LICENSE).

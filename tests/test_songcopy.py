@@ -248,12 +248,14 @@ class FindServer(unittest.TestCase):
             not p.startswith("\\\\") and real_isdir(p))
 
     def test_by_name(self):
-        self.network(up={"dahlias-den.local"}, shares_open={"dahlias-den.local"})
-        self.assertEqual(sc.find_server(say=lambda m: None), ("dahlias-den.local", "dahlias-den.local"))
+        sc.save_settings(server="myserver.local")
+        self.network(up={"myserver.local"}, shares_open={"myserver.local"})
+        self.assertEqual(sc.find_server(say=lambda m: None), ("myserver.local", "myserver.local"))
 
     def test_by_name_but_not_signed_in_signs_in_by_name(self):
-        self.network(up={"dahlias-den.local", "192.168.1.7"}, shares_open=set())
-        self.assertEqual(sc.find_server(say=lambda m: None), (None, "dahlias-den.local"))
+        sc.save_settings(server="myserver.local")
+        self.network(up={"myserver.local", "192.168.1.7"}, shares_open=set())
+        self.assertEqual(sc.find_server(say=lambda m: None), (None, "myserver.local"))
 
     def test_new_network_found_by_scanning(self):
         self.network(up={"192.168.1.1", "192.168.1.7"}, shares_open={"192.168.1.7"})
