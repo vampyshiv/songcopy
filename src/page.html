@@ -281,7 +281,7 @@ let RBT=null;
 async function rbBackups(){const stick=$('#dest').value.trim(),el=$('#rbbackups');if(!stick){el.innerHTML='';return}
  let r;try{r=await api('/api/stick/backups?stick='+encodeURIComponent(stick))}catch(e){return}
  if(!rbMode()||$('#dest').value.trim()!==stick)return;
- el.innerHTML=r.backups.length?`Backups of this stick's library <button type="button" class="tip" data-tip="Made automatically before every rekordbox export to this stick (the newest 10 are kept, in dubplate's folder on this computer). Restore puts the stick's playlists and library back as they were then; what it holds now is backed up first. The music files on the stick aren't touched.">?</button>: <select id="rbpick">${r.backups.map(b=>`<option>${esc(b)}</option>`).join('')}</select> <button type="button" id="rbrestore">Restore…</button> <span id="rbrmsg"></span>`
+ el.innerHTML=r.backups.length?`Backups of this stick's library <button type="button" class="tip" data-tip="Made automatically before every rekordbox export that changes this stick, and kept on this computer: the first one (the stick's library from before dubplate ever touched it) and the newest ones, 10 in all. Restore puts the stick's playlists and library back as they were then; what it holds now is backed up first. The music files on the stick aren't touched.">?</button>: <select id="rbpick">${r.backups.map(b=>`<option>${esc(b)}</option>`).join('')}</select> <button type="button" id="rbrestore">Restore…</button> <span id="rbrmsg"></span>`
   :(r.rekordbox?'This stick already has a rekordbox library: it is backed up before dubplate adds to it.':'');
  const b=$('#rbrestore');if(!b)return;
  let armed=null; // the stick and backup the confirmation was shown for
@@ -293,8 +293,8 @@ async function rbBackups(){const stick=$('#dest').value.trim(),el=$('#rbbackups'
   b.disabled=true;let x;try{x=await api('/api/stick/restore',armed)}catch(e){x={error:'dubplate didn\'t answer.'}}
   if(x.error){$('#rbrmsg').innerHTML=`<span style="color:var(--bad)">${esc(x.error)}</span>`;b.disabled=false;disarm();return}
   const miss=x.missing||[];
-  $('#done').innerHTML=`<div class="banner ${miss.length?'bad':'ok'}"><b>Restored</b> the stick's library from ${esc(armed.backup)}.`+(x.backup?` <span class="small">What it held just now is backed up too (${esc(x.backup)}).</span>`:'')+
-   (miss.length?`<br>${miss.length} song${miss.length>1?'s':''} in the restored playlists ${miss.length>1?'were':'was'} taken off the stick by a later export - send ${miss.length>1?'those sets':'that set'} again to put ${miss.length>1?'them':'it'} back:<br><span class="small">${miss.slice(0,20).map(esc).join('<br>')}${miss.length>20?'<br>…':''}</span>`:'')+'</div>';
+  $('#done').innerHTML=`<div class="banner ${miss.length||x.problem?'bad':'ok'}"><b>Restored</b> the stick's library from ${esc(armed.backup)}.`+(x.backup?` <span class="small">What it held just now is backed up too (${esc(x.backup)}).</span>`:'')+
+   (miss.length?`<br>${miss.length} song${miss.length>1?'s':''} in the restored playlists ${miss.length>1?'were':'was'} taken off the stick by a later export - send ${miss.length>1?'those sets':'that set'} again to put ${miss.length>1?'them':'it'} back:<br><span class="small">${miss.slice(0,20).map(esc).join('<br>')}${miss.length>20?'<br>…':''}</span>`:'')+(x.problem?`<br><b>But ${esc(x.problem)}.</b> Try the stick on a deck before a gig, or restore another backup.`:'')+'</div>';
   rbBackups()}}
 // songs already copied to the chosen folder (earlier runs) are hidden
 let CHECKT=null,CHECKN=0;
@@ -425,7 +425,7 @@ async function makeRekordbox(stick){
  $('#progress').classList.remove('hidden');
  const tick=async()=>{let j;try{j=await api('/api/rbjob/'+res.job)}catch(e){return setTimeout(tick,1000)}
   if(j.error==='not found'){$('#done').innerHTML='<div class="banner bad">Lost track of the export (was dubplate restarted?).</div>';$('#go').disabled=false;return}
-  const p=j.progress||{};$('#barfill').style.width=(100*(p.done||0)/Math.max(1,p.total||1))+'%';
+  const p=j.progress||{};if(p.total)$('#barfill').style.width=(100*(p.done||0)/p.total)+'%'; // stages without a count keep the bar where it was
   $('#ptext').textContent=`${STAGES[p.stage]||p.stage}${p.total?` · ${p.done} of ${p.total}`:''}${p.current?' · '+p.current:''}`;
   if(!j.finished)return setTimeout(tick,500);
   $('#go').disabled=false;rbBackups();

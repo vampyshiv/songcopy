@@ -219,9 +219,13 @@ they were, and first backs up what the stick holds now.
 
 - An export that fails, or that changes nothing, doesn't use up a backup.
 - dubplate keeps the **first** backup (the library from before dubplate first touched the
-  stick) plus the newest ones, 10 in all.
+  stick) plus the newest ones, 10 in all. A backup you restore is never pushed out by the one
+  made just before it.
 - Backups belong to the stick, not to the drive letter it gets today. dubplate leaves a small
-  id file on it (`PIONEER/dubplate/stick-id`).
+  folder on it, `.dubplate`, with the stick's id (and its serial number, so a stick copied
+  from another one gets backups of its own).
+- Only one dubplate writes a stick at a time; a second one (another window, a terminal) is
+  told to wait.
 - Restoring is only possible on the computer dubplate runs on, not from another device.
 
 **Managing the stick, as rekordbox does.** If a song is in no playlist on the stick any more
@@ -231,8 +235,9 @@ playlist back, but not the removed copy: dubplate says which songs are missing, 
 send that set again.
 
 **Safe if interrupted.** The stick's databases are swapped in only once everything is
-written. A stick pulled out, or dubplate closed in the middle, leaves the stick as it was
-before (or finishes the job next time).
+written, by rbxport for an export and by dubplate for a restore. A stick pulled out, or
+dubplate closed in the middle, leaves the stick as it was before, or the job is finished
+next time dubplate touches the stick.
 
 **Which decks?** The stick format is the one rekordbox writes for Pioneer CDJ/XDJ decks
 (`export.pdb`, plus `exportLibrary.db` for the newest). rbxport's author tests it on a
@@ -318,7 +323,7 @@ folder on a stick.
 - A song is offered again if its copy has been deleted. To copy something again anyway,
   tick it on the page, or use `--recopy`.
 - Nothing extra is written into your destinations (apart from a rekordbox stick's own
-  library and its id file). The memory, settings, saved song analysis and a saved copy of
+  library and dubplate's `.dubplate` folder on it). The memory, settings, saved song analysis and a saved copy of
   your library's song list live in `~/.cache/dubplate/` (Windows:
   `%LOCALAPPDATA%\dubplate\`). Deleting that folder resets dubplate.
 - Rekordbox stick backups are kept in `~/.local/share/dubplate/stick-backups/` (Windows:
@@ -398,8 +403,9 @@ share. The saved list lives in `~/.cache/dubplate/` (or `%LOCALAPPDATA%\dubplate
 - **A BPM is half or double.** The analysis fits one tempo to the whole song, the way
   rekordbox's Normal analysis does, and a song that's mostly half-time can read as half the
   tempo. dubplate can't correct a BPM by hand yet.
-- **"couldn't write the stick".** Nothing was changed (or the backup holds what was there).
-  The message says why; common causes are a full stick or one that's write-protected.
+- **"couldn't write the stick".** The message says why; common causes are a full stick or one
+  that's write-protected. If anything on the stick had changed, the message names the backup
+  that holds the library from before.
 - **A song is purple.** You don't have the exact version asked for (e.g. *Extended Mix*).
   Tick it to copy the version you do have, or pick another from its menu.
 - **Songs I expected are hidden.** They were already copied to that destination. Click

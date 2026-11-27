@@ -55,7 +55,7 @@ enum Cmd {
     /// put back a rekordbox stick's library as it was before an export
     /// (lists the stick's backups when no backup is named)
     RestoreStick {
-        /// the stick (its top folder, e.g. E:\\ or /media/you/USB)
+        /// the stick (its top folder, e.g. E: or /media/you/USB)
         stick: String,
         /// which backup, as listed
         backup: Option<String>,
@@ -265,7 +265,7 @@ fn run(cli: Cli) -> i32 {
         }
         Cmd::Update { check, rollback } => update_cmd(check, rollback),
         Cmd::RestoreStick { stick, backup } => {
-            let stick = paths::abspath(&paths::expanduser(&stick));
+            let stick = rekordbox::stick_path(&stick);
             let all = rekordbox::list_backups(&stick);
             match backup {
                 None if all.is_empty() => {
@@ -277,14 +277,17 @@ fn run(cli: Cli) -> i32 {
                     for b in &all {
                         println!("  {b}");
                     }
-                    let shown = stick.trim_end_matches(['/', '\\']);
-                    let shown = if shown.is_empty() { "/" } else { shown }; // a trailing \ would escape the quote on Windows
-                    println!("Put one back with: dubplate restore-stick \"{shown}\" \"<backup>\"");
+                    // quoted only when needed: on Windows a quote after a trailing \ would be escaped
+                    let shown = if stick.contains(' ') { format!("\"{}\"", if stick.ends_with('\\') { format!("{stick}\\") } else { stick.clone() }) } else { stick.clone() };
+                    println!("Put one back with: dubplate restore-stick {shown} \"<backup>\"");
                     0
                 }
                 Some(b) => match rekordbox::restore(&stick, &b) {
                     Ok(r) => {
                         println!("Put back the stick's library from {b}.");
+                        if let Some(p) = &r.problem {
+                            eprintln!("But: {p}. Try the stick on a deck before a gig, or restore another backup.");
+                        }
                         if let Some(n) = r.backup {
                             println!("What it held just now is backed up too ({n}).");
                         }
@@ -620,7 +623,7 @@ fn cli_run(music: &str, list: &str, prefer: &str, strict: bool, copy: Option<Cop
         })
         .collect();
 
-    let dest = paths::abspath(&paths::expanduser(&a.dest));
+    let dest = if a.rekordbox { rekordbox::stick_path(&a.dest) } else { paths::abspath(&paths::expanduser(&a.dest)) };
     if a.rekordbox {
         let stem = paths::splitext(paths::basename(list)).0.to_string();
         let name = a.name.clone().unwrap_or(stem);

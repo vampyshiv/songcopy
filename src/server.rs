@@ -460,8 +460,13 @@ fn get(ctx: &Ctx, path: &str, q: &HashMap<String, String>) -> Value {
             }
         }
         "/api/stick/backups" => {
-            let stick = paths::abspath(&paths::expanduser(q.get("stick").map(String::as_str).unwrap_or("").trim()));
-            json!({"backups": rekordbox::list_backups(&stick), "rekordbox": paths::isdir(&paths::join(&paths::join(&stick, "PIONEER"), "rekordbox"))})
+            let raw = q.get("stick").map(String::as_str).unwrap_or("").trim();
+            if raw.is_empty() {
+                json!({"backups": [], "rekordbox": false})
+            } else {
+                let stick = rekordbox::stick_path(raw);
+                json!({"backups": rekordbox::list_backups(&stick), "rekordbox": rekordbox::has_library(&stick)})
+            }
         }
         p if p.starts_with("/api/job/") => {
             let id = &p["/api/job/".len()..];
@@ -807,8 +812,10 @@ fn post(ctx: &Ctx, path: &str, b: &Value) -> (Value, bool) {
         "/api/copy" => start_copy(ctx, b),
         "/api/rekordbox" => start_rekordbox(ctx, b),
         "/api/stick/restore" => {
-            let stick = paths::abspath(&paths::expanduser(s(b, "stick").trim()));
-            if RESTART_PENDING.load(std::sync::atomic::Ordering::SeqCst) {
+            let stick = rekordbox::stick_path(s(b, "stick"));
+            if s(b, "stick").trim().is_empty() {
+                json!({"error": "Pick your USB stick first."})
+            } else if RESTART_PENDING.load(std::sync::atomic::Ordering::SeqCst) {
                 json!({"error": RESTARTING})
             } else if RB_BUSY.swap(true, std::sync::atomic::Ordering::SeqCst) {
                 json!({"error": "A rekordbox stick is being written; wait for it to finish."})
@@ -817,7 +824,7 @@ fn post(ctx: &Ctx, path: &str, b: &Value) -> (Value, bool) {
                     .unwrap_or_else(|_| Err("dubplate hit a bug restoring the stick".into()));
                 RB_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
                 match r {
-                    Ok(r) => json!({"ok": true, "backup": r.backup, "missing": r.missing}),
+                    Ok(r) => json!({"ok": true, "backup": r.backup, "missing": r.missing, "problem": r.problem}),
                     Err(e) => json!({"error": e}),
                 }
             }
@@ -1289,7 +1296,7 @@ fn start_rekordbox(ctx: &Ctx, b: &Value) -> Value {
     if stick_raw.is_empty() {
         return json!({"error": "Pick your USB stick first."});
     }
-    let stick = paths::abspath(&paths::expanduser(stick_raw));
+    let stick = rekordbox::stick_path(stick_raw);
     if !paths::isdir(&stick) {
         return json!({"error": format!("{stick} isn't there (is the stick plugged in?)")});
     }
