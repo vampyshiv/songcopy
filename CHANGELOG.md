@@ -2,7 +2,11 @@
 
 Each version's notes are shown in dubplate's update card before you install it.
 
-## 2.3.0
+## 1.0.0-alpha.1
+
+**Test build.** dubplate is in alpha until 1.0: builds are published as pre-releases and
+only test builds offer them as updates. Version numbers start again at 1.0.0-alpha.1 (the
+versions below were earlier development builds).
 
 **Rekordbox USB sticks, without rekordbox.** A third choice in step 3, **🎛 Rekordbox USB**,
 makes a stick the decks read like one made in rekordbox:
@@ -22,7 +26,9 @@ Terminal: `dubplate copy set.csv E:\ --rekordbox [--name NAME] [--convert aiff|m
 Built on [rbxport](https://github.com/chrisle/rbxport)'s engine. It's tested on the CDJ-3000,
 so **try a stick on your decks before a gig.**
 
-## 2.2.0
+## Earlier development builds
+
+### 2.2.0
 
 **Find missing songs on Soulseek.** If you use slskd (a Soulseek client), connect it in the
 new **⚙ Settings**, then click **🔎 Find on Soulseek**:
@@ -46,7 +52,7 @@ new **⚙ Settings**, then click **🔎 Find on Soulseek**:
 Settings can only be changed on the computer dubplate runs on. Your API key stays on your
 computer.
 
-## 2.1.1
+### 2.1.1
 
 **Making a USB after copying to your DJ folder now works the way you'd expect.** Step 3 is
 two clear choices, **📁 Copy to a folder** and **💾 Make a USB for the decks**, each with its
@@ -83,7 +89,7 @@ things):
   moment.
 - Clearer error messages when a file can't be converted.
 
-## 2.1.0
+### 2.1.0
 
 **songcopy is now called dubplate.** A dubplate is a one-off record cut just for a DJ to
 play out, and that's what this makes: a one-off USB or folder of exactly your set, from your
@@ -96,13 +102,13 @@ own library. Nothing else changes.
 - Downloads are now `dubplate-windows-x86_64.exe` and `dubplate-linux-x86_64`.
 - The project lives at github.com/vampyshiv/dubplate (old links still work).
 
-## 2.0.2
+### 2.0.2
 
 - Fix: after **Update now** or **Go back**, songcopy on Linux could fail to restart by
   itself ("No such file or directory"). The update itself was installed; starting songcopy
   again by hand was needed. Windows had the same risk.
 
-## 2.0.0
+### 2.0.0
 
 songcopy is now a native program, rewritten in Rust. One small download for Windows
 (`songcopy-windows-x86_64.exe`) and Linux (`songcopy-linux-x86_64`), with nothing else
@@ -120,14 +126,14 @@ to install. It finds the same songs as before, about 4 times faster.
 **Windows:** if you used the old `songcopy.exe` (1.1), download this version once by hand.
 From now on it updates itself.
 
-## 1.1.0
+### 1.1.0
 
 - Remembers what was copied to each destination: re-running a list only copies the new finds.
 - Files are numbered by their position in the list.
 - USB stick for CDJs/XDJs: converts what older decks can't play (FLAC, Opus, ALAC, hi-res).
 - Windows `songcopy.exe`.
 
-## 1.0.0
+### 1.0.0
 
 - First version: web page and terminal, forgiving matching, version-aware (Extended Mix,
   Original Mix, remixes), missing-songs report.

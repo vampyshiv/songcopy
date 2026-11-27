@@ -32,7 +32,11 @@ and it updates itself.
 
 ## Install
 
-Download the program for your computer from the [latest release](../../releases/latest):
+> **dubplate is in alpha.** Until 1.0, builds are test builds, published as
+> [pre-releases](../../releases). Expect rough edges, and try anything for a gig beforehand.
+
+Download the program for your computer from the [releases page](../../releases) (the newest
+at the top):
 
 - **Windows:** `dubplate-windows-x86_64.exe`. Put it wherever you like (the desktop is
   fine) and double-click it. Windows may warn about an "unknown publisher" because the app
@@ -453,10 +457,13 @@ cargo build --release  # target/release/dubplate
   updater shows them), then:
 
   ```
-  git tag v2.2.0 && git push origin v2.2.0
+  git tag v1.0.0-alpha.2 && git push origin v1.0.0-alpha.2
   ```
 
   The release gets both programs and a `SHA256SUMS` file the updater checks downloads against.
+  Alpha/beta tags (anything with a `-`) are published as **pre-releases**: only alpha/beta
+  copies of dubplate are offered them. A plain tag (`v1.0.0`) is a regular release, offered
+  to everyone.
 
 Versions before 2.0 were a single Python script; it's in the git history.
 

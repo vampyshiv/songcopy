@@ -108,19 +108,42 @@ fn cached_release() -> Option<Release> {
     })
 }
 
+/// is this an alpha / beta (test) build? Test builds are offered newer test builds too;
+/// regular builds only regular releases (GitHub's "latest" leaves pre-releases out)
+fn test_build(v: &str) -> bool {
+    semver::Version::parse(v).is_ok_and(|v| !v.pre.is_empty())
+}
+
+/// of GitHub's releases (newest first), the one with the highest version: test builds included
+/// or not, drafts never
+fn pick_release(list: &[Value], with_tests: bool) -> Option<&Value> {
+    list.iter()
+        .filter(|r| r.get("draft").and_then(Value::as_bool) != Some(true))
+        .filter(|r| with_tests || r.get("prerelease").and_then(Value::as_bool) != Some(true))
+        .filter_map(|r| {
+            let tag = r.get("tag_name")?.as_str()?.trim_start_matches('v');
+            Some((semver::Version::parse(tag).ok()?, r))
+        })
+        .max_by(|a, b| a.0.cmp(&b.0))
+        .map(|(_, r)| r)
+}
+
 /// ask GitHub for the newest release (and remember it)
 pub fn check_now() -> Result<(), String> {
-    let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
+    let url = format!("https://api.github.com/repos/{REPO}/releases?per_page=50");
     let resp = agent()
         .get(&url)
         .set("Accept", "application/vnd.github+json")
         .call()
         .map_err(|e| match e {
-            ureq::Error::Status(404, _) => "no releases published yet".to_string(),
             ureq::Error::Status(c, _) => format!("GitHub answered {c}"),
             e => format!("no connection to GitHub ({})", e.kind()),
         })?;
-    let v: Value = resp.into_json().map_err(|e| e.to_string())?;
+    let list: Value = resp.into_json().map_err(|e| e.to_string())?;
+    let list = list.as_array().cloned().unwrap_or_default();
+    let Some(v) = pick_release(&list, test_build(VERSION)).cloned() else {
+        return Err("no releases published yet".to_string());
+    };
     let tag = v.get("tag_name").and_then(Value::as_str).unwrap_or("");
     let asset = |name: &str| {
         v.get("assets")?
@@ -438,6 +461,19 @@ mod tests {
     #[test]
     fn versions() {
         assert!(newer("2.1.0", "2.0.0"));
+        assert!(newer("1.0.0-alpha.2", "1.0.0-alpha.1"));
+        assert!(newer("1.0.0-beta.1", "1.0.0-alpha.9"));
+        assert!(newer("1.0.0", "1.0.0-beta.3"));
+        assert!(test_build("1.0.0-alpha.1") && !test_build("1.0.0"));
+        let rel = |tag: &str, pre: bool, draft: bool| json!({"tag_name": tag, "prerelease": pre, "draft": draft});
+        let list = vec![rel("v1.0.0-beta.1", true, false), rel("v1.0.0-beta.2", true, true), rel("v1.0.0-alpha.3", true, false)];
+        let tag = |r: Option<&Value>| r.and_then(|r| r["tag_name"].as_str()).map(str::to_string);
+        assert_eq!(tag(pick_release(&list, true)).as_deref(), Some("v1.0.0-beta.1")); // drafts never
+        assert_eq!(tag(pick_release(&list, false)), None); // regular builds: no test builds
+        let mut list = list;
+        list.push(rel("v1.0.0", false, false));
+        assert_eq!(tag(pick_release(&list, false)).as_deref(), Some("v1.0.0"));
+        assert_eq!(tag(pick_release(&list, true)).as_deref(), Some("v1.0.0"));
         assert!(newer("10.0.0", "9.9.9"));
         assert!(!newer("2.0.0", "2.0.0"));
         assert!(!newer("garbage", "2.0.0"));
