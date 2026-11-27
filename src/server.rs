@@ -284,7 +284,8 @@ fn handle(ctx: &Ctx, mut req: tiny_http::Request) {
             let p = query(&url).remove("path").unwrap_or_default();
             return play(ctx, req, &p);
         }
-        let v = get(ctx, &path, &query(&url));
+        let here = from_this_computer(&req);
+        let v = get(ctx, &path, &query(&url), here);
         let _ = req.respond(json_response(
             if v.get("error") == Some(&json!("not found")) {
                 404
@@ -326,7 +327,9 @@ fn handle(ctx: &Ctx, mut req: tiny_http::Request) {
         (json!({"error": "A stick can only be restored on the computer dubplate is running on."}), false)
     } else if path == "/api/rekordbox" && !here {
         (json!({"error": "Rekordbox sticks can only be made on the computer dubplate is running on."}), false)
-    } else if (path == "/api/update/apply" || path == "/api/update/rollback") && !here {
+    } else if path == "/api/install_ffmpeg" && !here {
+        (json!({"error": "ffmpeg can only be installed on the computer dubplate is running on."}), false)
+    } else if matches!(path.as_str(), "/api/update/apply" | "/api/update/rollback" | "/api/update/settings") && !here {
         (json!({"error": "dubplate can only be updated on the computer it's running on."}), false)
     } else {
         post(ctx, &path, &b)
@@ -424,7 +427,7 @@ fn s<'a>(b: &'a Value, k: &str) -> &'a str {
     b.get(k).and_then(Value::as_str).unwrap_or("")
 }
 
-fn get(ctx: &Ctx, path: &str, q: &HashMap<String, String>) -> Value {
+fn get(ctx: &Ctx, path: &str, q: &HashMap<String, String>, here: bool) -> Value {
     let lib = &ctx.lib;
     match path {
         "/api/info" => {
@@ -437,6 +440,9 @@ fn get(ctx: &Ctx, path: &str, q: &HashMap<String, String>) -> Value {
                 "scanned": when(lib.scanned_at()), "ffmpeg": ff.is_some() && fp.is_some(), "windows": WINDOWS,
                 "version": update::VERSION, "appdir": paths::app_dir(), "soulseek": slskd::configured(), "ffmpeg_installing": fi.0, "ffmpeg_log": fi.1,
                 "home": home, "dest": ctx.dest.clone().unwrap_or_default(),
+                // opened on the computer dubplate runs on (settings, rekordbox sticks and updates
+                // only work there)
+                "here": here,
                 "example": join(&join(&home, "Desktop"), "My songs"),
             })
         }
@@ -454,7 +460,8 @@ fn get(ctx: &Ctx, path: &str, q: &HashMap<String, String>) -> Value {
             }
         }
         "/api/update/status" => {
-            serde_json::to_value(update::status(q.contains_key("check"))).unwrap_or(json!({}))
+            // only this computer can make dubplate ask GitHub right away
+            serde_json::to_value(update::status(here && q.contains_key("check"))).unwrap_or(json!({}))
         }
         p if p.starts_with("/api/rbjob/") => {
             let id = &p["/api/rbjob/".len()..];

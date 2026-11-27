@@ -65,6 +65,7 @@ td select{width:100%}
 .tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:4px 0 16px}
 @media (max-width:760px){.tabs{grid-template-columns:1fr}}
 .tab{text-align:left;padding:12px 14px;border:2px solid var(--line);border-radius:12px;background:var(--bg);display:flex;flex-direction:column;gap:3px}
+.tab:disabled{opacity:.6;cursor:not-allowed}
 .tab b{font-size:15.5px}.tab span{font-size:13px;color:var(--mute)}
 .tab.active{border-color:var(--acc);background:var(--card);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 18%,transparent)}
 .fieldlabel{display:block;font-weight:600;font-size:14px;margin:0 0 6px}
@@ -224,7 +225,7 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
   <div id="rbopts" class="hidden">
     <div class="opts"><label>Playlist name <input type="text" id="rb_name" style="min-width:12em" spellcheck="false"></label><button type="button" class="tip" data-tip="The playlist the decks show under PLAYLIST in the stick's library browser. Sending a set with the same name again replaces that playlist; a new name adds one next to the others. Playlists already on the stick, including ones made on a deck, stay.">?</button>
       <label>Songs older decks can't play become
-      <select id="rb_convert"><option value="aiff">AIFF (lossless)</option><option value="mp3">MP3 320 kbps (smaller)</option><option value="wav">WAV (lossless, no tags)</option><option value="none">Leave them as they are</option></select></label><button type="button" class="tip" data-tip="Older decks (CDJ-900/2000, CDJ-2000NXS, XDJ-1000, XDJ-RX…) only play MP3, and WAV or AIFF at 44.1/48 kHz. Everything else (FLAC, ALAC, AAC, Ogg, hi-res) is converted for the stick - your library's files are never changed. Opus and WMA also need ffmpeg. CDJ-2000NXS2, CDJ-3000 and newer play FLAC: pick “Leave them as they are” for those (files above 96 kHz or 24-bit still won't play; dubplate warns you about any).">?</button></div>
+      <select id="rb_convert"><option value="aiff">AIFF (lossless)</option><option value="mp3">MP3 320 kbps (smaller)</option><option value="wav">WAV (lossless, no tags)</option><option value="none">Leave them as they are</option></select></label><button type="button" class="tip" data-tip="Older decks (CDJ-900/2000, CDJ-2000NXS, XDJ-1000, XDJ-RX…) can't play FLAC, ALAC, Ogg or hi-res files. On a rekordbox stick only MP3, and WAV/AIFF at 44.1/48 kHz, are copied as they are; everything else (AAC too) is converted for the stick - your library's files are never changed. Opus and WMA also need ffmpeg. CDJ-2000NXS2, CDJ-3000 and newer play FLAC: pick “Leave them as they are” for those (Ogg and files above 96 kHz or 24-bit still won't play; dubplate warns you about any).">?</button></div>
     <p class="small" style="margin:8px 0 0">Each song is analysed once (tempo, beat grid, key, waveforms, a few seconds a song) and remembered, so the next stick is quick. Before anything is written, the stick's library is <b>backed up</b>. Use a <b>FAT32</b> (or exFAT for newer decks) stick. Made with <a href="https://github.com/chrisle/rbxport" target="_blank" rel="noopener">rbxport</a>'s engine.</p>
     <div id="rbbackups" class="small" style="margin-top:8px"></div>
   </div>
@@ -310,7 +311,7 @@ $('#usb_name').addEventListener('input',()=>{clearTimeout(CHECKT);CHECKT=setTime
 async function info(){const i=await api('/api/info');$('#root').textContent=i.root;
  if(!i.ready){$('#libinfo').textContent=`(reading your library for the first time… ${i.progress.toLocaleString()} songs so far)`;$('#rescan').classList.add('hidden')}
  else{$('#libinfo').textContent=`(${i.count.toLocaleString()} songs, checked ${i.scanned}${i.scanning?' · looking for new songs…':''})`;$('#rescan').classList.toggle('hidden',i.scanning)}
- window.INFO=i;if(!DEST.files&&i.dest){DEST.files=i.dest;if(MODE==='files')$('#dest').value=i.dest}if(MODE==='files')$('#dest').placeholder=i.example;
+ window.INFO=i;remoteLimits();if(!DEST.files&&i.dest){DEST.files=i.dest;if(MODE==='files')$('#dest').value=i.dest}if(MODE==='files')$('#dest').placeholder=i.example;
  if(i.appdir)$('#appdir').textContent=i.appdir;
  if(stickMode()&&!$('#dest').value)$('#dest').placeholder=i.windows?'E:\\':'/media/you/USB';
  $('#noffmpeg').classList.toggle('hidden',!!i.ffmpeg);
@@ -582,16 +583,25 @@ document.addEventListener('focusout',e=>{if(e.target.closest('.tip'))hideTip()})
 document.addEventListener('click',e=>{const t=e.target.closest('.tip');if(t){e.preventDefault();e.stopPropagation();(TIPON===t&&Date.now()-TIPAT>500)?hideTip():showTip(t);return}hideTip()},true);
 document.addEventListener('keydown',e=>{if(e.key==='Escape')hideTip()});
 addEventListener('scroll',hideTip,{passive:true});
+// opened from another device: rekordbox sticks and updates only work on the computer dubplate
+// runs on, so those controls are switched off here with a word on why (the server refuses them too)
+const AWAY='This only works on the computer dubplate is running on.';
+function remoteLimits(){if(!window.INFO||INFO.here!==false)return;
+ const t=$('#tab_rb');if(!t.disabled){t.disabled=true;t.title=AWAY;t.insertAdjacentHTML('beforeend',`<span class="small" style="color:var(--warn)">${AWAY}</span>`)}
+ if(MODE==='rb'){MODE='files';showMode()}
+ $('#updauto').disabled=true;$('#updgo').disabled=true;$('#updmsg').textContent=AWAY;
+ $('#updback').innerHTML='';$('#updcheck').style.display='none'}
 // ---- updates
 let UPD=null;
 async function upd(check){const u=await api('/api/update/status'+(check?'?check=1':''));UPD=u;
  $('#updauto').checked=!!u.auto;
- $('#updback').innerHTML=u.previous?` · <a href="#" id="updrollback">Go back to ${esc(u.previous)}</a>`:'';
+ const away=window.INFO&&INFO.here===false;
+ $('#updback').innerHTML=u.previous&&!away?` · <a href="#" id="updrollback">Go back to ${esc(u.previous)}</a>`:'';
  const rb=$('#updrollback');if(rb)rb.onclick=e=>{e.preventDefault();install('/api/update/rollback','Going back to '+u.previous)};
  $('#updstatus').textContent=u.checking?'Checking for updates…':u.error&&check?'Couldn\'t check: '+u.error:(check&&!u.available?'You have the newest version.':'');
  let hide=false;try{hide=sessionStorage.getItem('sc_later')===u.latest}catch(e){}
  if(u.available&&!hide){$('#updcard').classList.remove('hidden');$('#updtitle').textContent=`dubplate ${u.latest} is available (you have ${u.current})`;
-  $('#updnotes').textContent=u.notes||'';$('#updgo').disabled=!u.can_install;$('#updmsg').textContent=u.can_install?'':(u.why_not||'')}
+  $('#updnotes').textContent=u.notes||'';$('#updgo').disabled=!u.can_install||away;$('#updmsg').textContent=away?AWAY:u.can_install?'':(u.why_not||'')}
  else $('#updcard').classList.add('hidden');
  if(u.checking)setTimeout(()=>upd(false),2000)}
 async function install(url,what){$('#updcard').classList.remove('hidden');$('#updgo').disabled=true;$('#updmsg').textContent=what+'… (downloading, then dubplate restarts)';

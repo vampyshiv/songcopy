@@ -432,20 +432,31 @@ fn write_atomic_as(path: &str, data: &[u8], private: bool) -> std::io::Result<()
         std::fs::create_dir_all(d)?;
     }
     clean_stale_tmp(path);
-    let n = TMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let tmp = format!("{path}.{}-{n}.tmp", std::process::id());
+    // a fresh temp name: one left by a crash (same process id after a restart, as in a
+    // container) is never written over or deleted
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    if private {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(0o600); // private from the start, not only once written
+    }
+    let (tmp, file) = {
+        let mut tries = 0;
+        loop {
+            let n = TMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let tmp = format!("{path}.{}-{n}.tmp", std::process::id());
+            match o.open(&tmp) {
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && tries < 1000 => tries += 1,
+                other => break (tmp, other),
+            }
+        }
+    };
+    let mut f = file?; // (on failure there's nothing of ours to clean up)
     // on the disk before it takes the real name, so a crash or a pulled stick never leaves an
     // empty file under it
     let mut r = (|| {
         use std::io::Write;
-        let mut o = std::fs::OpenOptions::new();
-        o.write(true).create_new(true);
-        #[cfg(unix)]
-        if private {
-            use std::os::unix::fs::OpenOptionsExt;
-            o.mode(0o600); // private from the start, not only once written
-        }
-        let mut f = o.open(&tmp)?;
         f.write_all(data)?;
         f.sync_all()
     })();
@@ -505,6 +516,24 @@ pub fn human(n: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_leftover_temp_file_is_neither_reused_nor_deleted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("settings.json").to_string_lossy().into_owned();
+        // the next few temp names this process would pick are already taken (a crash, a
+        // container restarted with the same process id)
+        let next = TMP.load(std::sync::atomic::Ordering::Relaxed);
+        let taken: Vec<String> = (next..next + 3).map(|n| format!("{path}.{}-{n}.tmp", std::process::id())).collect();
+        for t in &taken {
+            std::fs::write(t, b"someone else's").unwrap();
+        }
+        write_atomic(&path, b"{}").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"{}");
+        for t in &taken {
+            assert_eq!(std::fs::read(t).unwrap(), b"someone else's");
+        }
+    }
 
     #[test]
     fn like_python() {

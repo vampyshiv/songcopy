@@ -408,7 +408,7 @@ pub fn deck_playable(src: &str, info: &Probe) -> bool {
 
 /// deck-ready copy of src at dst (extension decided here). Never overwrites, never touches src.
 /// the most useful line of ffmpeg's complaint, without its internal "[codec @ 0x5fe1…]" prefixes
-fn ffmpeg_reason(stderr: &str) -> String {
+pub(crate) fn ffmpeg_reason(stderr: &str) -> String {
     static PREFIX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\[[^\]]*\]\s*").unwrap());
     let lines: Vec<String> = stderr
         .lines()

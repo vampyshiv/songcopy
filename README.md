@@ -207,12 +207,13 @@ The decks then read the stick as if rekordbox had made it:
 - **Several sets per stick.** A new playlist name adds a playlist next to the others. Sending
   a set with the same name again replaces that playlist. Playlists already on the stick stay,
   including ones made on a deck or by rekordbox.
-- **Songs older decks can't play are converted** for the stick. Older decks play MP3, and
-  WAV/AIFF at 44.1/48 kHz; everything else (FLAC, ALAC, AAC, Ogg, hi-res) becomes AIFF
-  (default), MP3 320 or WAV. Opus and WMA are read through ffmpeg, so they need it installed.
-  Your library's files are never changed. Pick "Leave them as they are" for decks that play
-  FLAC (CDJ-2000NXS2, CDJ-3000 and newer); files above 96 kHz or 24-bit still won't play there,
-  and dubplate warns about any in the set.
+- **Songs older decks can't play are converted** for the stick. MP3, and WAV/AIFF at
+  44.1/48 kHz, are copied as they are; everything else (FLAC, ALAC, AAC, Ogg, hi-res) becomes
+  AIFF (default), MP3 320 or WAV. Opus and WMA are read through ffmpeg, so they need it
+  installed (dubplate keeps a FLAC copy of each in its folder, under `decoded`). Your library's
+  files are never changed. Pick "Leave them as they are" for decks that play FLAC
+  (CDJ-2000NXS2, CDJ-3000 and newer); Ogg and files above 96 kHz or 24-bit still won't play
+  there, and dubplate warns about any in the set.
 - **The stick must be a stick.** dubplate refuses a folder that is, or holds, one of your
   library folders, since a rekordbox stick manages its own files.
 - Use a **FAT32** stick (exFAT works on newer decks).
@@ -238,8 +239,8 @@ they were, and first backs up what the stick holds now.
   stick's serial number, so a stick copied from another one gets backups of its own.
 - Only one dubplate writes a stick at a time; a second one (another window, a terminal) is
   told to wait.
-- Making and restoring rekordbox sticks, and updating dubplate, are only possible on the
-  computer dubplate runs on, not from another device.
+- Making and restoring rekordbox sticks, updating dubplate and installing ffmpeg are only
+  possible on the computer dubplate runs on; on other devices the page switches them off.
 
 **Managing the stick, as rekordbox does.** If a song is in no playlist on the stick any more
 (you re-sent a set without it), its copy on the stick is removed with the next export. These
