@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Settings · dubplate guides</title>
+<meta name="description" content="dubplate's settings: music folders, extra library folders, Soulseek, using the page from another device, and what dubplate remembers.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+<div class="shell">
+<aside class="side">
+<a class="brand" href="index.html"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="16" fill="var(--ink)"/>
+<circle cx="17" cy="17" r="12.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="9.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="6" fill="var(--acc)"/><circle cx="17" cy="17" r="1.4" fill="var(--bg)"/></svg><div><b>dubplate</b><span>Guides</span></div></a>
+<details id="nav" open><summary>All guides</summary>
+<nav aria-label="Guides">
+<h4>Get started</h4><ul>
+<li><a href="index.html">Start here</a></li>
+<li><a href="install.html">Install</a></li>
+<li><a href="first-set.html">Your first set</a></li>
+</ul>
+<h4>Guides</h4><ul>
+<li><a href="song-lists.html">Song lists</a></li>
+<li><a href="copy-folder.html">Copy to DJ software</a></li>
+<li><a href="usb-sticks.html">USB for decks</a></li>
+<li><a href="rekordbox-usb.html">Rekordbox USB</a></li>
+<li><a href="missing-songs.html">Missing songs</a></li>
+</ul>
+<h4>Reference</h4><ul>
+<li><a href="settings.html" aria-current="page">Settings</a></li>
+<li><a href="terminal.html">Terminal</a></li>
+<li><a href="help.html">Help & glossary</a></li>
+</ul>
+</nav>
+</details>
+<p class="alpha">dubplate is in <strong>alpha</strong>: test builds until 1.0. Try anything on your own gear before a gig.</p>
+</aside>
+<main>
+<p class="kicker">Reference</p>
+<h1>Settings, folders and other devices</h1>
+<p class="lede">Where dubplate looks for music, how to use its page from your phone, and what it keeps on your computer.</p>
+<h2 id="settings">⚙ Settings</h2>
+<p>Open <strong>⚙ Settings</strong> at the top of the page.</p>
+<dl class="terms">
+<dt>Main music folder</dt><dd>The folder with your music. dubplate reads every song in it and its subfolders, and never changes anything there. Click <span class="btn">Browse…</span> to pick it.</dd>
+<dt>Also look in</dt><dd>More folders that count as your library: a second drive, or the folder your downloader saves to. Add one with <span class="btn">+ Add a folder…</span>; songs from it show that folder's name in front of their path.</dd>
+<dt>Soulseek (slskd)</dt><dd>The address and API key for slskd. See <a href="missing-songs.html#fetch-them-through-soulseek">Fetch them through Soulseek</a>.</dd>
+</dl>
+<p>Click <span class="btn primary">Save settings</span> when you're done. Settings can only be changed on the computer dubplate runs on, not from another device.</p>
+
+<h2 id="using-the-page-from-your-phone-or-another-computer">Using the page from your phone or another computer</h2>
+<p>Normally the page only opens on the computer running dubplate. To use it from a phone or laptop on the same network, start dubplate from a terminal like this:</p>
+<pre><code>dubplate serve --host 0.0.0.0</code></pre>
+<p>Then open <code>http://computer-name:8765</code> (or the computer's address) on the other device.</p>
+<ul>
+<li>Anyone on your network can then copy songs from your library. They can't delete anything, and only songs from your library can be copied, never other files on the computer.</li>
+<li>Settings and stick restores still only work on the computer itself.</li>
+<li>Behind a reverse proxy with its own web address, allow that name too: <code>--allow-host dubplate.example.com</code>.</li>
+</ul>
+
+<h2 id="what-dubplate-keeps">What dubplate keeps</h2>
+<ul>
+<li><strong>What it copied where</strong>, so the same list isn't copied twice to the same place.</li>
+<li><strong>Your settings</strong>, and a saved list of your library's songs so the page opens instantly.</li>
+<li><strong>Song analysis</strong> for rekordbox sticks, so each song is analysed once.</li>
+</ul>
+<p>These live in <code>%LOCALAPPDATA%\dubplate</code> on Windows and <code>~/.cache/dubplate</code> on Linux. Deleting that folder resets dubplate.</p>
+<p>Rekordbox stick backups are kept separately, where cleaning tools leave them alone: <code>%LOCALAPPDATA%\dubplate\stick-backups</code> on Windows, <code>~/.local/share/dubplate/stick-backups</code> on Linux.</p>
+<p>Nothing extra is written into the places you copy to, apart from a rekordbox stick's own library and dubplate's small <code>.dubplate</code> folder on it.</p>
+<nav class="next" aria-label="More guides"><a href="missing-songs.html"><small>Previous</small><b>Missing songs</b></a><a href="terminal.html"><small>Next</small><b>Terminal</b></a></nav>
+</main>
+</div>
+<script>if (window.matchMedia("(max-width: 860px)").matches) document.getElementById("nav").removeAttribute("open");</script>
+</body>
+</html>

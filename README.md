@@ -20,6 +20,9 @@ grids and waveforms, without rekordbox.
 A single small program for Windows and Linux, written in Rust. Nothing else to install,
 and it updates itself.
 
+**New to dubplate?** The [guides](docs/index.html) walk you through everything step by
+step, for DJs of every level.
+
 ## Contents
 
 [Install](#install) · [Quick start](#quick-start) · [Using the web page](#using-the-web-page) ·

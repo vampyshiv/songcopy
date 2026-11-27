@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Copy to DJ software · dubplate guides</title>
+<meta name="description" content="Copy songs into the folder Traktor, Serato, rekordbox, VirtualDJ or other DJ software uses, with numbering and playlist options.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+<div class="shell">
+<aside class="side">
+<a class="brand" href="index.html"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="16" fill="var(--ink)"/>
+<circle cx="17" cy="17" r="12.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="9.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="6" fill="var(--acc)"/><circle cx="17" cy="17" r="1.4" fill="var(--bg)"/></svg><div><b>dubplate</b><span>Guides</span></div></a>
+<details id="nav" open><summary>All guides</summary>
+<nav aria-label="Guides">
+<h4>Get started</h4><ul>
+<li><a href="index.html">Start here</a></li>
+<li><a href="install.html">Install</a></li>
+<li><a href="first-set.html">Your first set</a></li>
+</ul>
+<h4>Guides</h4><ul>
+<li><a href="song-lists.html">Song lists</a></li>
+<li><a href="copy-folder.html" aria-current="page">Copy to DJ software</a></li>
+<li><a href="usb-sticks.html">USB for decks</a></li>
+<li><a href="rekordbox-usb.html">Rekordbox USB</a></li>
+<li><a href="missing-songs.html">Missing songs</a></li>
+</ul>
+<h4>Reference</h4><ul>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="terminal.html">Terminal</a></li>
+<li><a href="help.html">Help & glossary</a></li>
+</ul>
+</nav>
+</details>
+<p class="alpha">dubplate is in <strong>alpha</strong>: test builds until 1.0. Try anything on your own gear before a gig.</p>
+</aside>
+<main>
+<p class="kicker">Guides</p>
+<h1>Copy a set to your DJ software</h1>
+<p class="lede">For DJing from a laptop. dubplate copies the files, exactly as they are, into the folder your DJ software uses. Then you add or import them the way you always do.</p>
+<h2 id="copy-the-songs">Copy the songs</h2>
+<ol class="steps">
+<li><b>Load your list and check the matches</b>As in <a href="first-set.html">Your first set</a>.</li>
+<li><b>Choose 📁 Copy to a folder</b>In step 3, <strong>Where should they go?</strong></li>
+<li><b>Pick the folder</b>Click <span class="btn">Browse…</span>, open the folder and click <strong>✓ Copy into this folder</strong>. Use your DJ software's music folder, or a new folder for this set inside it.</li>
+<li><b>Choose the options you want</b>See below.</li>
+<li><b>Click Copy</b>When it's done, the green box lists what was copied.</li>
+</ol>
+
+<h2 id="options">Options</h2>
+<dl class="terms">
+<dt>Keep Artist / Album folders</dt><dd>Recreates your library's folders inside the destination (<code>Artist/Album/song</code>). Off: every song goes into the one folder.</dd>
+<dt>Number files in list order</dt><dd>Puts each song's position in front of its name (<code>007 - Artist - Title.mp3</code>), so the folder sorts in your set's order. The number is the song's place on your list, so songs added later slot into their own place.</dd>
+<dt>Also make a playlist file</dt><dd>Writes <code>playlist.m3u8</code> into the folder, in your list's order. Most DJ and music software can import it as a ready-made playlist.</dd>
+</dl>
+
+<h2 id="then-in-your-dj-software">Then, in your DJ software</h2>
+<p>dubplate only copies files; your software still has to pick them up. Every program does this a little differently, so check its own help if this doesn't match:</p>
+<ul>
+<li><strong>Software that watches a music folder</strong> (Traktor's Music Folders, for example) finds new songs when it next checks that folder. Point it at the folder you copied into if it isn't already.</li>
+<li><strong>Software where you import files</strong>: drag the new folder, or the copied songs, into its library.</li>
+<li><strong>Import the playlist file</strong> if you ticked <em>Also make a playlist file</em>: most software can open or import <code>playlist.m3u8</code>, which gives you the set as a playlist in the right order.</li>
+</ul>
+<p>Let your software analyse the new songs (BPM, key, beat grid) before you play them, as usual.</p>
+
+<h2 id="it-remembers-what-it-copied">It remembers what it copied</h2>
+<p>Each destination folder has its own memory. Load the same list again later and songs already copied there are hidden, so after you've found the missing songs only those are copied. Click <strong>✓ already copied</strong> to see the others, and tick any you want copied again.</p>
+<ul>
+<li>A song is offered again if you've deleted its copy.</li>
+<li>Copying the same set to a different folder, or to a USB stick, starts fresh: each place has its own memory.</li>
+</ul>
+
+<div class="note"><strong>Nothing is ever overwritten.</strong> If a file is already in the folder, it's skipped. If a <em>different</em> file has the same name, the new one gets <code>(2)</code> added to its name. And your library itself is never touched.</div>
+<nav class="next" aria-label="More guides"><a href="song-lists.html"><small>Previous</small><b>Song lists</b></a><a href="usb-sticks.html"><small>Next</small><b>USB for decks</b></a></nav>
+</main>
+</div>
+<script>if (window.matchMedia("(max-width: 860px)").matches) document.getElementById("nav").removeAttribute("open");</script>
+</body>
+</html>

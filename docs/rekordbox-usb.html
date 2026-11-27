@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rekordbox USB · dubplate guides</title>
+<meta name="description" content="Make a USB stick Pioneer CDJs and XDJs read like one exported from rekordbox: playlists with BPM, key, beat grids and waveforms, with automatic backups.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+<div class="shell">
+<aside class="side">
+<a class="brand" href="index.html"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="16" fill="var(--ink)"/>
+<circle cx="17" cy="17" r="12.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="9.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="6" fill="var(--acc)"/><circle cx="17" cy="17" r="1.4" fill="var(--bg)"/></svg><div><b>dubplate</b><span>Guides</span></div></a>
+<details id="nav" open><summary>All guides</summary>
+<nav aria-label="Guides">
+<h4>Get started</h4><ul>
+<li><a href="index.html">Start here</a></li>
+<li><a href="install.html">Install</a></li>
+<li><a href="first-set.html">Your first set</a></li>
+</ul>
+<h4>Guides</h4><ul>
+<li><a href="song-lists.html">Song lists</a></li>
+<li><a href="copy-folder.html">Copy to DJ software</a></li>
+<li><a href="usb-sticks.html">USB for decks</a></li>
+<li><a href="rekordbox-usb.html" aria-current="page">Rekordbox USB</a></li>
+<li><a href="missing-songs.html">Missing songs</a></li>
+</ul>
+<h4>Reference</h4><ul>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="terminal.html">Terminal</a></li>
+<li><a href="help.html">Help & glossary</a></li>
+</ul>
+</nav>
+</details>
+<p class="alpha">dubplate is in <strong>alpha</strong>: test builds until 1.0. Try anything on your own gear before a gig.</p>
+</aside>
+<main>
+<p class="kicker">Guides</p>
+<h1>Rekordbox USB sticks, without rekordbox</h1>
+<p class="lede">Make a stick the decks read as if rekordbox had made it: your set is a playlist in the deck's library browser, and every song has its BPM, key, beat grid and waveforms. You don't need rekordbox, or an account.</p>
+<h2 id="what-you-get-on-the-decks">What you get on the decks</h2>
+<ul>
+<li><strong>Your set as a playlist</strong> under <strong>PLAYLIST</strong> in the deck's browser, in your list's order.</li>
+<li><strong>BPM and key</strong> for every song, so you can browse and sort by them on the deck.</li>
+<li><strong>A beat grid</strong>, so the deck's beat counter, quantize and sync have something to work with.</li>
+<li><strong>Waveforms</strong>: the overview and the scrolling waveform, in colour on decks that draw colour.</li>
+<li><strong>Several sets on one stick</strong>, each its own playlist.</li>
+</ul>
+
+<h2 id="make-the-stick">Make the stick</h2>
+<ol class="steps">
+<li><b>Plug in a FAT32 stick</b>Most sticks come as FAT32. Newer decks also read exFAT. To format one, see <a href="usb-sticks.html#get-the-stick-ready">Get the stick ready</a>.</li>
+<li><b>Load your list and check the matches</b>As in <a href="first-set.html">Your first set</a>.</li>
+<li><b>Choose 🎛 Rekordbox USB</b>In step 3.</li>
+<li><b>Pick the stick itself</b>Its top folder: on Windows a drive like <code>E:\</code>, on Linux something like <code>/media/you/USB</code>. Not a folder on it: the decks look for their library at the top of the stick.</li>
+<li><b>Name the playlist</b><strong>Playlist name</strong> starts with your list's name.</li>
+<li><b>Choose what older decks get</b><strong>Songs older decks can't play become</strong>: see <a href="#formats">Which format?</a> below.</li>
+<li><b>Click Make the rekordbox playlist</b>dubplate analyses each song, copies the files and writes the stick's library. Eject the stick properly before you unplug it.</li>
+</ol>
+
+<h3>How long does it take?</h3>
+<p>The first time, each song is analysed: a few seconds a song, several at a time. dubplate remembers the result, so the next stick with the same songs is much quicker (a set it has seen before takes seconds). Songs are only analysed again if their file changes.</p>
+
+<h2 id="at-the-deck">At the deck</h2>
+<ol class="steps">
+<li><b>Plug in the stick and choose it as the source</b></li>
+<li><b>Open PLAYLIST</b>Your sets are there by name. (Not the folder view: that shows files without the library.)</li>
+<li><b>Load and play</b>BPM, key and waveforms are already there.</li>
+</ol>
+
+<h2 id="formats">Which format?</h2>
+<p>Older decks can't play FLAC, ALAC, Ogg/Opus or hi-res files, so dubplate converts those for the stick. It never changes your library's files, and no ffmpeg is needed.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Choose</th><th>When</th></tr></thead>
+<tbody>
+<tr><td>AIFF (lossless)</td><td>The safe default: full quality, plays on every deck, keeps tags.</td></tr>
+<tr><td>MP3 320 kbps</td><td>When space on the stick matters. About a quarter of the size.</td></tr>
+<tr><td>WAV (lossless, no tags)</td><td>If you specifically want WAV. The library on the stick still has the song's details.</td></tr>
+<tr><td>Leave them as they are</td><td>For decks that play FLAC: CDJ-2000NXS2, CDJ-3000 and newer.</td></tr>
+</tbody></table></div>
+
+<h2 id="more-than-one-set">More than one set</h2>
+<ul>
+<li><strong>A new playlist name adds a playlist</strong> next to the ones already on the stick.</li>
+<li><strong>The same name replaces that playlist.</strong> Send "Friday" again after changing your list, and Friday is updated.</li>
+<li><strong>Other playlists stay</strong>, including ones made on a deck or by rekordbox.</li>
+<li>A song in several sets is stored on the stick once.</li>
+</ul>
+<div class="note careful"><strong>Removing songs works like rekordbox.</strong>If you re-send a set without a song, and no other playlist on the stick has it, that song's copy is taken off the stick to save space. Only copies dubplate put on the stick are removed; your library is never touched.</div>
+
+<h2 id="backups-and-restore">Backups and Restore</h2>
+<p>Before dubplate changes a stick, it keeps a copy of the stick's library on your computer (the playlists and database, not the music). If a set comes out wrong, put the old library back:</p>
+<ol class="steps">
+<li><b>Choose the stick in the 🎛 Rekordbox USB tab</b>Its backups appear under the options: <strong>Backups of this stick's library</strong>.</li>
+<li><b>Pick a backup</b>Each is named by the date and time it was made.</li>
+<li><b>Click Restore…, then Yes, put it back</b>The stick's playlists go back to how they were. What it held just now is backed up first, so you can change your mind.</li>
+</ol>
+<ul>
+<li>dubplate keeps the <strong>first</strong> backup (the stick from before dubplate ever touched it) and the newest ones, ten in all.</li>
+<li>An export that changes nothing doesn't use up a backup.</li>
+<li>Backups belong to the stick, not to the drive letter it happens to get. dubplate leaves a small <code>.dubplate</code> folder on the stick to recognise it.</li>
+<li>If a song a restored playlist needs was taken off the stick by a later export, dubplate lists it; send that set again to put it back.</li>
+<li>Restore only works on the computer dubplate runs on, not from a phone or another computer.</li>
+</ul>
+
+<h2 id="safe-to-interrupt">Safe to interrupt</h2>
+<p>The stick's library is swapped in only once everything is written. Pull the stick out or close dubplate halfway, and the stick keeps the library it had; the next time dubplate uses the stick, it finishes or tidies up. Only one dubplate writes a stick at a time; a second one is told to wait.</p>
+
+<h2 id="what-s-on-the-stick">What's on the stick</h2>
+<div class="tree">USB stick
+├── PIONEER
+│   ├── rekordbox        <i>← the library: export.pdb, exportLibrary.db</i>
+│   └── USBANLZ          <i>← beat grids and waveforms</i>
+├── Contents
+│   └── Artist / Album / songs
+└── .dubplate            <i>← dubplate's note of which stick this is</i></div>
+<p>This is the same layout rekordbox writes, so you can still open the stick in rekordbox if you want to.</p>
+
+<h2 id="things-to-know">Things to know</h2>
+<ul>
+<li><strong>Test before the gig.</strong> The stick format comes from <a href="https://github.com/chrisle/rbxport">rbxport</a>, whose author tests it on a CDJ-3000. Try a stick on the decks you'll play before you rely on it.</li>
+<li><strong>Half or double BPM.</strong> Each song gets one tempo, fitted to the whole song, as rekordbox's normal analysis does. A song that's mostly half-time can come out at half its tempo, and dubplate can't correct a BPM by hand yet.</li>
+<li><strong>No cue points yet.</strong> dubplate doesn't add hot cues or memory cues to the stick.</li>
+</ul>
+<nav class="next" aria-label="More guides"><a href="usb-sticks.html"><small>Previous</small><b>USB for decks</b></a><a href="missing-songs.html"><small>Next</small><b>Missing songs</b></a></nav>
+</main>
+</div>
+<script>if (window.matchMedia("(max-width: 860px)").matches) document.getElementById("nav").removeAttribute("open");</script>
+</body>
+</html>

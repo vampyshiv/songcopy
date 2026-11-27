@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Your first set · dubplate guides</title>
+<meta name="description" content="A walkthrough for beginners: load a set list into dubplate, check the matches and copy the songs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+<div class="shell">
+<aside class="side">
+<a class="brand" href="index.html"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="16" fill="var(--ink)"/>
+<circle cx="17" cy="17" r="12.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="9.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="6" fill="var(--acc)"/><circle cx="17" cy="17" r="1.4" fill="var(--bg)"/></svg><div><b>dubplate</b><span>Guides</span></div></a>
+<details id="nav" open><summary>All guides</summary>
+<nav aria-label="Guides">
+<h4>Get started</h4><ul>
+<li><a href="index.html">Start here</a></li>
+<li><a href="install.html">Install</a></li>
+<li><a href="first-set.html" aria-current="page">Your first set</a></li>
+</ul>
+<h4>Guides</h4><ul>
+<li><a href="song-lists.html">Song lists</a></li>
+<li><a href="copy-folder.html">Copy to DJ software</a></li>
+<li><a href="usb-sticks.html">USB for decks</a></li>
+<li><a href="rekordbox-usb.html">Rekordbox USB</a></li>
+<li><a href="missing-songs.html">Missing songs</a></li>
+</ul>
+<h4>Reference</h4><ul>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="terminal.html">Terminal</a></li>
+<li><a href="help.html">Help & glossary</a></li>
+</ul>
+</nav>
+</details>
+<p class="alpha">dubplate is in <strong>alpha</strong>: test builds until 1.0. Try anything on your own gear before a gig.</p>
+</aside>
+<main>
+<p class="kicker">Get started</p>
+<h1>Your first set, step by step</h1>
+<p class="lede">This walks through one whole set: from a list of songs to files ready to play. If you haven't installed dubplate yet, do that first.</p>
+<div class="note tip"><strong>Before you start</strong>Have <a href="install.html">dubplate installed</a> and its page open in your browser, and have your set list ready. Any of these works: a spreadsheet, a Spotify playlist export, a text file with one <code>Artist - Title</code> per line. Not sure? See <a href="song-lists.html">Song lists</a>.</div>
+
+<h2 id="1-give-it-your-list">1. Give it your list</h2>
+<p>The page has three numbered steps. In step 1, <strong>Your song list</strong>:</p>
+<ul>
+<li><strong>Drop your file</strong> onto the box, or click the box to choose it.</li>
+<li>Or click <strong>…or paste a list</strong> and paste rows straight from Excel or Google Sheets, or type lines like <code>Daft Punk - One More Time</code>. Then click <span class="btn">Find these songs</span>.</li>
+</ul>
+<p>Underneath is <strong>If a song exists as both FLAC and MP3, use</strong>. If your library has some songs in both formats, this picks which one is copied. FLAC is the best quality; MP3 is smaller.</p>
+
+<h2 id="2-check-what-it-found">2. Check what it found</h2>
+<p>In a moment every song on your list appears with a colour:</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Colour</th><th>What it means</th><th>Is it copied?</th></tr></thead>
+<tbody>
+<tr><td><span class="chip ok">Found</span></td><td>The exact song.</td><td>Yes</td></tr>
+<tr><td><span class="chip warn">Best guess</span></td><td>A close match, such as a typo or a different spelling. Listen to check it.</td><td>Yes. Untick it to leave it out.</td></tr>
+<tr><td><span class="chip alt">Other version only</span></td><td>You asked for one version (say the <em>Extended Mix</em>) but only have another (the radio edit, a remix).</td><td>No, unless you tick it.</td></tr>
+<tr><td><span class="chip bad">Not found</span></td><td>It isn't in your library.</td><td>No</td></tr>
+</tbody></table></div>
+<ul>
+<li>Press <strong>▶</strong> next to any song to hear it.</li>
+<li>Own more than one version? The menu under the song lists them; pick one to use it instead.</li>
+<li>Click a coloured count at the top (like <span class="chip warn">3 best guess</span>) to see only those songs.</li>
+<li>Red songs show <strong>Did you mean</strong> suggestions, and <strong>Search the library myself…</strong> lets you look for one by hand.</li>
+</ul>
+<p>Missing songs? Don't worry about them yet: copy what you have now, and see <a href="missing-songs.html">Missing songs</a> afterwards.</p>
+
+<h2 id="3-choose-where-they-go">3. Choose where they go</h2>
+<p>Step 3, <strong>Where should they go?</strong>, has three choices:</p>
+<ul>
+<li><strong>📁 Copy to a folder</strong> for DJ software on a laptop. <a href="copy-folder.html">More about this</a></li>
+<li><strong>💾 Make a USB for the decks</strong> for a simple stick for CDJs/XDJs. <a href="usb-sticks.html">More about this</a></li>
+<li><strong>🎛 Rekordbox USB</strong> for a stick with BPM, key and waveforms on the decks. <a href="rekordbox-usb.html">More about this</a></li>
+</ul>
+<p>Pick one, then choose the place: type it in, or click <span class="btn">Browse…</span> and pick a folder (or your USB stick). dubplate remembers it for next time.</p>
+
+<h2 id="4-copy">4. Copy</h2>
+<p>Click the big button: <span class="btn primary">Copy 24 songs</span> (or <span class="btn primary">Make USB with 24 songs</span>, or <span class="btn primary">Make the rekordbox playlist with 24 songs</span>). A progress bar shows each song as it goes. When it's done, a green box says what was copied, and the copied songs disappear from the list.</p>
+
+<div class="note"><strong>Next time is quicker.</strong> dubplate remembers what it copied to each place. Get the missing songs, load the same list again, and only those new songs are offered. Click <strong>✓ already copied</strong> to see the rest.</div>
+
+<h2 id="every-option-explains-itself">Every option explains itself</h2>
+<p>Each option on the page has a small <strong>?</strong> next to it. Hover over it (or tap it on a phone) for a short explanation. <strong>How dubplate works</strong> at the top of the page is a one-screen summary.</p>
+<nav class="next" aria-label="More guides"><a href="install.html"><small>Previous</small><b>Install</b></a><a href="song-lists.html"><small>Next</small><b>Song lists</b></a></nav>
+</main>
+</div>
+<script>if (window.matchMedia("(max-width: 860px)").matches) document.getElementById("nav").removeAttribute("open");</script>
+</body>
+</html>

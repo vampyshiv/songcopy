@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Missing songs · dubplate guides</title>
+<meta name="description" content="What to do about songs dubplate can't find: check for near matches, download a shopping list, or fetch them through Soulseek with slskd.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+<div class="shell">
+<aside class="side">
+<a class="brand" href="index.html"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="16" fill="var(--ink)"/>
+<circle cx="17" cy="17" r="12.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="9.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="6" fill="var(--acc)"/><circle cx="17" cy="17" r="1.4" fill="var(--bg)"/></svg><div><b>dubplate</b><span>Guides</span></div></a>
+<details id="nav" open><summary>All guides</summary>
+<nav aria-label="Guides">
+<h4>Get started</h4><ul>
+<li><a href="index.html">Start here</a></li>
+<li><a href="install.html">Install</a></li>
+<li><a href="first-set.html">Your first set</a></li>
+</ul>
+<h4>Guides</h4><ul>
+<li><a href="song-lists.html">Song lists</a></li>
+<li><a href="copy-folder.html">Copy to DJ software</a></li>
+<li><a href="usb-sticks.html">USB for decks</a></li>
+<li><a href="rekordbox-usb.html">Rekordbox USB</a></li>
+<li><a href="missing-songs.html" aria-current="page">Missing songs</a></li>
+</ul>
+<h4>Reference</h4><ul>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="terminal.html">Terminal</a></li>
+<li><a href="help.html">Help & glossary</a></li>
+</ul>
+</nav>
+</details>
+<p class="alpha">dubplate is in <strong>alpha</strong>: test builds until 1.0. Try anything on your own gear before a gig.</p>
+</aside>
+<main>
+<p class="kicker">Guides</p>
+<h1>When songs are missing</h1>
+<p class="lede">Some songs on your list aren't in your library, or only in a different version. Here's how to check, how to keep a shopping list, and how to fetch them through Soulseek if you use it.</p>
+<h2 id="first-check-it-really-is-missing">First, check it really is missing</h2>
+<ul>
+<li><span class="chip bad">Not found</span> songs show <strong>Did you mean</strong> suggestions. If one is right, click it and the song turns green.</li>
+<li><strong>Search the library myself…</strong> under a song opens a search box: type a few words of the artist or title.</li>
+<li>Added the song to your library just now? Click <strong>Rescan library</strong> at the top of the page.</li>
+<li><span class="chip alt">Other version only</span> means you own a different version (say the radio edit instead of the extended mix). Tick it to copy what you have, or pick another version from its menu.</li>
+</ul>
+
+<h2 id="keep-a-shopping-list">Keep a shopping list</h2>
+<p>Click <span class="btn">⬇ Download the missing songs as a CSV</span>. You get a spreadsheet of every missing and other-version song, with the closest thing your library has next to each. Take it to your record store, Bandcamp or Beatport.</p>
+<p>When you've got the songs into your library, load the same list again. Everything you already copied is hidden, so only the new songs are copied.</p>
+
+<h2 id="fetch-them-through-soulseek">Fetch them through Soulseek</h2>
+<p><a href="https://github.com/slskd/slskd">slskd</a> is a Soulseek client that runs as a web app. If you use it, dubplate can search Soulseek for your missing songs and queue the files you approve. Download only music you have the right to.</p>
+
+<h3>Connect slskd once</h3>
+<ol class="steps">
+<li><b>Open ⚙ Settings in dubplate</b>At the top of the page. Find <strong>Soulseek (slskd)</strong>.</li>
+<li><b>Enter slskd's address</b>The address you open slskd with in your browser, for example <code>http://localhost:5030</code>.</li>
+<li><b>Make an API key</b>Click <span class="btn">Make a key for me</span>. dubplate shows a few lines with your new key. Click <span class="btn">Copy these lines</span>.</li>
+<li><b>Add the lines to slskd</b>In slskd's web page, go to <strong>System → Options → Edit</strong> (or edit its <code>slskd.yml</code> file) and paste them. If there's already an <code>api_keys:</code> line, add only the <code>dubplate:</code> part under it. Save, and restart slskd if it asks.
+<pre><code>web:
+  authentication:
+    api_keys:
+      dubplate:
+        key: your-new-key
+        role: readwrite</code></pre>
+The key needs <code>role: readwrite</code>: a read-only key can't search or download.</li>
+<li><b>Click Test connection</b>It shows slskd's version and whether it's logged in to Soulseek.</li>
+<li><b>Add slskd's download folder to your library</b>Under <strong>Also look in</strong>, so downloaded songs are found. dubplate offers it with one click when it can see that folder. If slskd runs in Docker, add the same folder with <span class="btn">+ Add a folder…</span> instead.</li>
+<li><b>Click Save settings</b></li>
+</ol>
+
+<h3>Find and download</h3>
+<ol class="steps">
+<li><b>Click 🔎 Find on Soulseek</b>Above the list (for all missing songs) or under one song.</li>
+<li><b>Check the picks</b>For each song dubplate shows its best find, ticked if it's an exact match. It uses the same rules as for your library, so it won't pick a radio edit when you asked for the extended mix. It prefers lossless files, then MP3 320, skips anything under 192 kbps, and prefers people who can send it now. Other results are in the menu under the pick.</li>
+<li><b>Click ⬇ Download from Soulseek</b>Nothing downloads until you do.</li>
+<li><b>Wait for the songs to turn green</b>Progress shows under each song ("waiting in queue", "downloading 45%"). When downloads finish, dubplate reads your library again and the songs are ready to copy.</li>
+</ol>
+<p>slskd does the downloading, with its own settings and limits. Your API key stays on your computer and isn't shown again after you save it.</p>
+<nav class="next" aria-label="More guides"><a href="rekordbox-usb.html"><small>Previous</small><b>Rekordbox USB</b></a><a href="settings.html"><small>Next</small><b>Settings</b></a></nav>
+</main>
+</div>
+<script>if (window.matchMedia("(max-width: 860px)").matches) document.getElementById("nav").removeAttribute("open");</script>
+</body>
+</html>

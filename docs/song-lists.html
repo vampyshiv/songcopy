@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Song lists · dubplate guides</title>
+<meta name="description" content="Which list formats dubplate reads, how to export playlists from Spotify and DJ software, and how matching handles versions and spelling.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+<div class="shell">
+<aside class="side">
+<a class="brand" href="index.html"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="16" fill="var(--ink)"/>
+<circle cx="17" cy="17" r="12.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="9.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="6" fill="var(--acc)"/><circle cx="17" cy="17" r="1.4" fill="var(--bg)"/></svg><div><b>dubplate</b><span>Guides</span></div></a>
+<details id="nav" open><summary>All guides</summary>
+<nav aria-label="Guides">
+<h4>Get started</h4><ul>
+<li><a href="index.html">Start here</a></li>
+<li><a href="install.html">Install</a></li>
+<li><a href="first-set.html">Your first set</a></li>
+</ul>
+<h4>Guides</h4><ul>
+<li><a href="song-lists.html" aria-current="page">Song lists</a></li>
+<li><a href="copy-folder.html">Copy to DJ software</a></li>
+<li><a href="usb-sticks.html">USB for decks</a></li>
+<li><a href="rekordbox-usb.html">Rekordbox USB</a></li>
+<li><a href="missing-songs.html">Missing songs</a></li>
+</ul>
+<h4>Reference</h4><ul>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="terminal.html">Terminal</a></li>
+<li><a href="help.html">Help & glossary</a></li>
+</ul>
+</nav>
+</details>
+<p class="alpha">dubplate is in <strong>alpha</strong>: test builds until 1.0. Try anything on your own gear before a gig.</p>
+</aside>
+<main>
+<p class="kicker">Guides</p>
+<h1>Song lists dubplate understands</h1>
+<p class="lede">Almost any list of songs works: a spreadsheet, a playlist file, a text file or rows pasted from anywhere. Here's what dubplate reads and how to get a list out of the apps you use.</p>
+<h2 id="what-you-can-give-it">What you can give it</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>Kind</th><th>Files</th><th>What it should hold</th></tr></thead>
+<tbody>
+<tr><td>Spreadsheet</td><td><code>.xlsx</code> <code>.csv</code> <code>.tsv</code></td><td>A header row with <strong>Artist</strong> and <strong>Title</strong> (or Song, Track, Name). <strong>Album</strong> and <strong>File</strong> (or Path) help if you have them. Any order.</td></tr>
+<tr><td>Text file</td><td><code>.txt</code></td><td>One song per line: <code>Artist - Title</code>, a file name, or a file's path.</td></tr>
+<tr><td>Playlist</td><td><code>.m3u</code> <code>.m3u8</code></td><td>Any playlist, including ones made on another computer: dubplate matches by name, not by the old path.</td></tr>
+<tr><td>Pasted</td><td>(none)</td><td>Rows copied from Excel or Google Sheets, or typed <code>Artist - Title</code> lines.</td></tr>
+</tbody></table></div>
+
+<h2 id="getting-a-list-out-of-other-apps">Getting a list out of other apps</h2>
+<h3>Spotify</h3>
+<p>Use a free exporter such as <a href="https://exportify.net">Exportify</a>: sign in, export the playlist as a CSV and drop that file on dubplate. Its columns work as they are.</p>
+<h3>Traktor, rekordbox, Serato, VirtualDJ, Engine</h3>
+<p>Export or save the playlist as an <strong>M3U / M3U8</strong> playlist file (most DJ software offers this on a playlist's right-click menu) and drop it on dubplate. This is handy for moving a set from one computer to another.</p>
+<h3>A set written down anywhere else</h3>
+<p>Type or paste it, one song per line, as <code>Artist - Title</code>. Tracklists from a mix's description or a forum post usually paste straight in.</p>
+
+<h2 id="how-songs-are-matched">How songs are matched</h2>
+<p>dubplate reads your library's <strong>file and folder names</strong>. It handles the usual layouts, such as <code>Artist/Album (Year)/Artist - Album - 07 - Title.flac</code> from music managers like Lidarr, beets or Picard, and loose <code>Artist - Title.mp3</code> files.</p>
+<h3>Spelling doesn't have to be perfect</h3>
+<p>Capitals, accents (<code>Sigur Ros</code> = <code>Sigur Rós</code>), punctuation, small typos, <code>- Remastered 2011</code> and <code>feat. Somebody</code> don't stop a match.</p>
+<h3>Versions do matter</h3>
+<p>DJs care which mix they get, so dubplate does too:</p>
+<ul>
+<li><code>(Original Mix)</code>, <code>(Album Version)</code> and no tag at all count as the same song.</li>
+<li><code>Extended Mix</code> = <code>Extended Version</code>.</li>
+<li><code>Club Mix</code>, <code>Radio Edit</code>, <code>Live</code> and any <code>… Remix</code> are <strong>different versions</strong>. If you ask for one and only have another, the song shows <span class="chip alt">Other version only</span> and isn't copied unless you tick it.</li>
+</ul>
+<p>So write the version on your list when it matters: <code>Artist - Title (Extended Mix)</code>.</p>
+<h3>When you own a song more than once</h3>
+<p>dubplate prefers the original studio album over live albums, compilations and remix albums, then the format you chose (FLAC or MP3).</p>
+
+<div class="note tip"><strong>A song is red but you know you have it?</strong>Matching reads names, not the tags inside files. Click <strong>Search the library myself…</strong> under the song, or compare your list's spelling with the file's name. If you added the song just now, click <strong>Rescan library</strong> at the top of the page.</div>
+<nav class="next" aria-label="More guides"><a href="first-set.html"><small>Previous</small><b>Your first set</b></a><a href="copy-folder.html"><small>Next</small><b>Copy to DJ software</b></a></nav>
+</main>
+</div>
+<script>if (window.matchMedia("(max-width: 860px)").matches) document.getElementById("nav").removeAttribute("open");</script>
+</body>
+</html>

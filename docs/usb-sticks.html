@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>USB for decks · dubplate guides</title>
+<meta name="description" content="Make a plain-folder USB stick for Pioneer CDJs and XDJs: one numbered folder per set, with files converted where older decks need it.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+<div class="shell">
+<aside class="side">
+<a class="brand" href="index.html"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="16" fill="var(--ink)"/>
+<circle cx="17" cy="17" r="12.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="9.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="6" fill="var(--acc)"/><circle cx="17" cy="17" r="1.4" fill="var(--bg)"/></svg><div><b>dubplate</b><span>Guides</span></div></a>
+<details id="nav" open><summary>All guides</summary>
+<nav aria-label="Guides">
+<h4>Get started</h4><ul>
+<li><a href="index.html">Start here</a></li>
+<li><a href="install.html">Install</a></li>
+<li><a href="first-set.html">Your first set</a></li>
+</ul>
+<h4>Guides</h4><ul>
+<li><a href="song-lists.html">Song lists</a></li>
+<li><a href="copy-folder.html">Copy to DJ software</a></li>
+<li><a href="usb-sticks.html" aria-current="page">USB for decks</a></li>
+<li><a href="rekordbox-usb.html">Rekordbox USB</a></li>
+<li><a href="missing-songs.html">Missing songs</a></li>
+</ul>
+<h4>Reference</h4><ul>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="terminal.html">Terminal</a></li>
+<li><a href="help.html">Help & glossary</a></li>
+</ul>
+</nav>
+</details>
+<p class="alpha">dubplate is in <strong>alpha</strong>: test builds until 1.0. Try anything on your own gear before a gig.</p>
+</aside>
+<main>
+<p class="kicker">Guides</p>
+<h1>A simple USB stick for the decks</h1>
+<p class="lede">The quickest way onto club decks. Each set becomes one folder on the stick, numbered in your order, and anything older decks can't play is converted on the way. You browse it with the deck's folder view.</p>
+<div class="note tip"><strong>Want BPM, key and waveforms on the decks?</strong>This kind of stick shows folders and files only. For a stick the decks read like one made in rekordbox, see <a href="rekordbox-usb.html">Rekordbox USB</a>.</div>
+
+<h2 id="get-the-stick-ready">Get the stick ready</h2>
+<p>Pioneer decks read <strong>FAT32</strong> sticks. Most new sticks come formatted as FAT32 already; if yours doesn't, format it once.</p>
+<div class="note careful"><strong>Formatting erases everything on the stick.</strong>Copy off anything you want to keep first.</div>
+<ul>
+<li><strong>Windows:</strong> in File Explorer, right-click the stick → <strong>Format…</strong> → File system <strong>FAT32</strong> → Start. Windows only offers FAT32 for sticks up to 32 GB; for a bigger stick use a formatting tool that offers FAT32.</li>
+<li><strong>Linux:</strong> in the Disks app, select the stick → the gear button → <strong>Format Partition…</strong> → choose <strong>For use with all systems and devices (FAT)</strong>.</li>
+<li><strong>Mac:</strong> Disk Utility → select the stick → <strong>Erase</strong> → Format <strong>MS-DOS (FAT)</strong>.</li>
+</ul>
+
+<h2 id="make-the-stick">Make the stick</h2>
+<ol class="steps">
+<li><b>Plug in the stick, load your list and check the matches</b>As in <a href="first-set.html">Your first set</a>.</li>
+<li><b>Choose 💾 Make a USB for the decks</b>In step 3.</li>
+<li><b>Pick the stick</b>Click <span class="btn">Browse…</span> and choose the stick itself (on Windows a drive like <code>E:\</code>). Picking the stick's top folder keeps all your sets side by side.</li>
+<li><b>Name the set's folder</b><strong>Playlist folder on the stick</strong> starts with your list's name. Use a different name for each set: <code>Friday</code>, <code>Warm-up</code>, <code>Peak time</code>.</li>
+<li><b>Choose what to convert to</b>See below. AIFF is the safe choice.</li>
+<li><b>Click Make USB</b>Then eject the stick properly before you unplug it.</li>
+</ol>
+<p>The stick then looks like this:</p>
+<div class="tree">USB stick
+├── Friday
+│   ├── 001 - Artist - First Song.mp3
+│   ├── 002 - Artist - Second Song.aiff   <i>← was a FLAC, converted</i>
+│   └── 003 - Artist - Third Song.mp3
+└── Warm-up
+    └── …</div>
+
+<h2 id="what-gets-converted">What gets converted</h2>
+<p>Older Pioneer decks (CDJ-900, CDJ-2000, XDJ-1000, XDJ-RX and similar) can't play every file type. dubplate copies what they can play unchanged and converts the rest, on the stick only. Your library's files are never changed.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>File</th><th>On the stick</th></tr></thead>
+<tbody>
+<tr><td>MP3, AAC</td><td>Copied as it is</td></tr>
+<tr><td>WAV, AIFF (16/24-bit, 44.1 or 48 kHz)</td><td>Copied as it is</td></tr>
+<tr><td>FLAC, ALAC, Ogg, Opus, WMA</td><td>Converted</td></tr>
+<tr><td>Hi-res (above 48 kHz, or 32-bit)</td><td>Converted</td></tr>
+</tbody></table></div>
+<p><strong>Songs the decks can't play become:</strong></p>
+<ul>
+<li><strong>AIFF (lossless)</strong>: full quality, bigger files. The default.</li>
+<li><strong>MP3 320 kbps (smaller)</strong>: about a quarter of the size, and it sounds the same to nearly everyone on a club system.</li>
+</ul>
+<p>Tags and artwork are kept either way.</p>
+
+<h3>Converting needs ffmpeg</h3>
+<p>ffmpeg is a free audio tool dubplate uses for converting. If it isn't installed, the page says so:</p>
+<ul>
+<li><strong>Windows:</strong> click <span class="btn">Install ffmpeg now</span> on the page (free, about a minute), then restart dubplate.</li>
+<li><strong>Linux:</strong> run <code>sudo apt install ffmpeg</code> (or your system's equivalent).</li>
+</ul>
+<p>Without ffmpeg, MP3, WAV and AIFF files are still copied; only the files that need converting are left out.</p>
+
+<h2 id="at-the-deck">At the deck</h2>
+<ol class="steps">
+<li><b>Plug in the stick and choose it as the source</b>Usually the <strong>USB</strong> button.</li>
+<li><b>Use the folder view</b>Browse by <strong>folder</strong>, not the library or playlist view. Open your set's folder.</li>
+<li><b>Play in order</b>The numbers keep the songs in your set's order.</li>
+</ol>
+
+<h2 id="good-to-know">Good to know</h2>
+<ul>
+<li><strong>The stick remembers each set.</strong> Songs already in that set's folder are hidden next time, so you can top up a set. A different folder name starts a fresh set.</li>
+<li><strong>Your DJ folder doesn't count.</strong> Songs you copied to your laptop's DJ folder still show up for the stick; each place has its own memory.</li>
+<li><strong>Safe if you pull it out.</strong> Each song is written under a temporary name and only gets its real name once it's completely on the stick, so an interrupted copy never leaves a broken song behind.</li>
+</ul>
+<nav class="next" aria-label="More guides"><a href="copy-folder.html"><small>Previous</small><b>Copy to DJ software</b></a><a href="rekordbox-usb.html"><small>Next</small><b>Rekordbox USB</b></a></nav>
+</main>
+</div>
+<script>if (window.matchMedia("(max-width: 860px)").matches) document.getElementById("nav").removeAttribute("open");</script>
+</body>
+</html>

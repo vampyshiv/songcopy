@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Terminal · dubplate guides</title>
+<meta name="description" content="dubplate's command-line commands and options, for scripting and for people who prefer a terminal.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+<div class="shell">
+<aside class="side">
+<a class="brand" href="index.html"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="16" fill="var(--ink)"/>
+<circle cx="17" cy="17" r="12.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="9.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="6" fill="var(--acc)"/><circle cx="17" cy="17" r="1.4" fill="var(--bg)"/></svg><div><b>dubplate</b><span>Guides</span></div></a>
+<details id="nav" open><summary>All guides</summary>
+<nav aria-label="Guides">
+<h4>Get started</h4><ul>
+<li><a href="index.html">Start here</a></li>
+<li><a href="install.html">Install</a></li>
+<li><a href="first-set.html">Your first set</a></li>
+</ul>
+<h4>Guides</h4><ul>
+<li><a href="song-lists.html">Song lists</a></li>
+<li><a href="copy-folder.html">Copy to DJ software</a></li>
+<li><a href="usb-sticks.html">USB for decks</a></li>
+<li><a href="rekordbox-usb.html">Rekordbox USB</a></li>
+<li><a href="missing-songs.html">Missing songs</a></li>
+</ul>
+<h4>Reference</h4><ul>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="terminal.html" aria-current="page">Terminal</a></li>
+<li><a href="help.html">Help & glossary</a></li>
+</ul>
+</nav>
+</details>
+<p class="alpha">dubplate is in <strong>alpha</strong>: test builds until 1.0. Try anything on your own gear before a gig.</p>
+</aside>
+<main>
+<p class="kicker">Reference</p>
+<h1>Using dubplate from a terminal</h1>
+<p class="lede">Everything the page does also works from a terminal. Handy for scripts, or if you'd rather type than click. You don't need any of this to use dubplate.</p>
+<h2 id="commands">Commands</h2>
+<pre><code>dubplate                                    # open the page (same as double-clicking)
+dubplate find  friday.csv                   # check a list, copy nothing
+dubplate copy  friday.csv ~/Music/Traktor   # copy to a folder
+dubplate copy  friday.csv E:\ --usb         # a plain USB for the decks
+dubplate copy  friday.csv E:\ --rekordbox   # a rekordbox USB: playlist "friday"
+dubplate restore-stick E:                   # list a rekordbox stick's backups
+dubplate restore-stick E: "2026-11-27 21.04.10"   # put one back
+dubplate update                             # install the newest version</code></pre>
+<p>Songs it can't find are printed in red and saved next to your list as <code>friday-missing.csv</code>.</p>
+
+<h2 id="options-for-copy">Options for copy</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>Option</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>--prefer flac|mp3|any</code></td><td>Which format when you own a song in several (default <code>flac</code>).</td></tr>
+<tr><td><code>--folders</code></td><td>Keep Artist/Album folders instead of one flat folder.</td></tr>
+<tr><td><code>--number</code></td><td>Put the list order in front of file names: <code>001 - …</code></td></tr>
+<tr><td><code>--playlist</code></td><td>Also write <code>playlist.m3u8</code>.</td></tr>
+<tr><td><code>--strict</code></td><td>Don't copy best guesses.</td></tr>
+<tr><td><code>--any-version</code></td><td>Copy the version you have when the exact one isn't there.</td></tr>
+<tr><td><code>--usb</code></td><td>A plain USB for the decks: a numbered folder, converting what decks can't play.</td></tr>
+<tr><td><code>--usb-format aiff|mp3</code></td><td>What <code>--usb</code> converts to (default <code>aiff</code>).</td></tr>
+<tr><td><code>--rekordbox</code></td><td>A rekordbox USB: the destination is the stick, the list becomes a playlist.</td></tr>
+<tr><td><code>--convert aiff|mp3|wav|none</code></td><td>What <code>--rekordbox</code> converts files older decks can't play to (default <code>aiff</code>).</td></tr>
+<tr><td><code>--name NAME</code></td><td>The playlist (or folder) name for <code>--usb</code> / <code>--rekordbox</code>. Default: the list's file name.</td></tr>
+<tr><td><code>--recopy</code></td><td>Also copy songs already copied there before.</td></tr>
+<tr><td><code>--dry-run</code></td><td>Show what would happen, copy nothing.</td></tr>
+<tr><td><code>--music PATH</code></td><td>Use this music folder for this run.</td></tr>
+</tbody></table></div>
+
+<h2 id="options-for-the-page">Options for the page</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>Option</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>serve --no-browser</code></td><td>Start without opening a browser.</td></tr>
+<tr><td><code>serve --port 8766</code></td><td>Use another port (if 8765 is taken).</td></tr>
+<tr><td><code>serve --dest FOLDER</code></td><td>Start with this destination folder filled in.</td></tr>
+<tr><td><code>serve --host 0.0.0.0</code></td><td>Allow other devices on your network; see <a href="settings.html#using-the-page-from-your-phone-or-another-computer">Settings</a>.</td></tr>
+</tbody></table></div>
+
+<h2 id="updates">Updates</h2>
+<pre><code>dubplate update            # install the newest version
+dubplate update --check    # only say whether there is one
+dubplate update --rollback # go back to the version you had</code></pre>
+<nav class="next" aria-label="More guides"><a href="settings.html"><small>Previous</small><b>Settings</b></a><a href="help.html"><small>Next</small><b>Help & glossary</b></a></nav>
+</main>
+</div>
+<script>if (window.matchMedia("(max-width: 860px)").matches) document.getElementById("nav").removeAttribute("open");</script>
+</body>
+</html>

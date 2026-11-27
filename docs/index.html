@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>dubplate guides</title>
+<meta name="description" content="Guides for dubplate: copy a list of songs from your music library to your DJ software or a USB stick for CDJs and XDJs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+<div class="shell">
+<aside class="side">
+<a class="brand" href="index.html"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="16" fill="var(--ink)"/>
+<circle cx="17" cy="17" r="12.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="9.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="6" fill="var(--acc)"/><circle cx="17" cy="17" r="1.4" fill="var(--bg)"/></svg><div><b>dubplate</b><span>Guides</span></div></a>
+<details id="nav" open><summary>All guides</summary>
+<nav aria-label="Guides">
+<h4>Get started</h4><ul>
+<li><a href="index.html" aria-current="page">Start here</a></li>
+<li><a href="install.html">Install</a></li>
+<li><a href="first-set.html">Your first set</a></li>
+</ul>
+<h4>Guides</h4><ul>
+<li><a href="song-lists.html">Song lists</a></li>
+<li><a href="copy-folder.html">Copy to DJ software</a></li>
+<li><a href="usb-sticks.html">USB for decks</a></li>
+<li><a href="rekordbox-usb.html">Rekordbox USB</a></li>
+<li><a href="missing-songs.html">Missing songs</a></li>
+</ul>
+<h4>Reference</h4><ul>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="terminal.html">Terminal</a></li>
+<li><a href="help.html">Help & glossary</a></li>
+</ul>
+</nav>
+</details>
+<p class="alpha">dubplate is in <strong>alpha</strong>: test builds until 1.0. Try anything on your own gear before a gig.</p>
+</aside>
+<main>
+<p class="kicker">dubplate guides</p>
+<h1>Get your set out of your library and onto your gear</h1>
+<p class="lede">You have a set list. Somewhere in a library of thousands of songs are the files for it. dubplate finds them all at once, tells you which ones you don't have, and copies the rest where you need them: your DJ software's folder, or a USB stick for the club's decks.</p>
+<h2 id="what-dubplate-does">What dubplate does</h2>
+<ol class="steps">
+<li><b>You give it a list</b>A spreadsheet, a Spotify playlist export, a text file, or rows pasted from Excel or Google Sheets.</li>
+<li><b>It finds every song in your music library</b>It reads your library's file and folder names, and it knows a <em>Radio Edit</em> isn't the <em>Extended Mix</em> you asked for.</li>
+<li><b>You check what it found</b>Each song gets a colour: <span class="chip ok">Found</span> <span class="chip warn">Best guess</span> <span class="chip alt">Other version only</span> <span class="chip bad">Not found</span>. You can listen to any of them first.</li>
+<li><b>It copies them where you want</b>To a folder (for Traktor, Serato, rekordbox, VirtualDJ…), to a plain USB stick for the decks, or to a <strong>rekordbox USB</strong> with BPM, key and waveforms.</li>
+</ol>
+<p><strong>It only ever copies.</strong> Your library is never changed: nothing is moved, deleted or overwritten. Load the same list again next week and only the songs you've added since are copied.</p>
+
+<h2 id="where-do-you-want-to-start">Where do you want to start?</h2>
+<div class="paths">
+<a href="first-set.html"><b>I'm new to this</b><span>Install dubplate and copy your first set, step by step. About ten minutes.</span><em>Your first set →</em></a>
+<a href="copy-folder.html"><b>I DJ on a laptop</b><span>Traktor, Serato, rekordbox, VirtualDJ, djay: get a set into your software's music folder.</span><em>Copy to DJ software →</em></a>
+<a href="rekordbox-usb.html"><b>I'm playing on CDJs or XDJs</b><span>Make a stick the decks read like one from rekordbox, with playlists, BPM, key and waveforms.</span><em>Rekordbox USB →</em></a>
+<a href="missing-songs.html"><b>Some songs are missing</b><span>Get a shopping list of what you don't have, or fetch songs through Soulseek.</span><em>Missing songs →</em></a>
+</div>
+
+<h2 id="which-kind-of-copy-do-you-need">Which kind of copy do you need?</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>You're playing on</th><th>Choose</th><th>What you get</th></tr></thead>
+<tbody>
+<tr><td>A laptop with DJ software</td><td><a href="copy-folder.html">📁 Copy to a folder</a></td><td>The files, exactly as they are, in the folder your software watches.</td></tr>
+<tr><td>CDJs / XDJs, quick and simple</td><td><a href="usb-sticks.html">💾 Make a USB for the decks</a></td><td>One numbered folder per set. Browse it with the deck's folder view. No BPM or waveforms.</td></tr>
+<tr><td>CDJs / XDJs, the full experience</td><td><a href="rekordbox-usb.html">🎛 Rekordbox USB</a></td><td>Your set as a playlist in the deck's library, with BPM, key, beat grids and waveforms. No rekordbox needed.</td></tr>
+</tbody></table></div>
+
+<div class="note careful"><strong>dubplate is in alpha</strong>It works, but it's still being tested. Always try a stick or a folder on your own gear before you rely on it at a gig.</div>
+
+<h2 id="what-you-need">What you need</h2>
+<ul>
+<li>A Windows or Linux computer. dubplate is one small program with nothing else to install.</li>
+<li>Your music library on that computer, on an external drive, or on a home server.</li>
+<li>A web browser. dubplate opens its own page in it; nothing goes to the internet except the update check.</li>
+</ul>
+<nav class="next" aria-label="More guides"><a href="install.html"><small>Next</small><b>Install</b></a></nav>
+</main>
+</div>
+<script>if (window.matchMedia("(max-width: 860px)").matches) document.getElementById("nav").removeAttribute("open");</script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Help & glossary · dubplate guides</title>
+<meta name="description" content="Fixes for common problems with dubplate, frequently asked questions, and a glossary of DJ and audio terms.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+<div class="shell">
+<aside class="side">
+<a class="brand" href="index.html"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="16" fill="var(--ink)"/>
+<circle cx="17" cy="17" r="12.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="9.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="6" fill="var(--acc)"/><circle cx="17" cy="17" r="1.4" fill="var(--bg)"/></svg><div><b>dubplate</b><span>Guides</span></div></a>
+<details id="nav" open><summary>All guides</summary>
+<nav aria-label="Guides">
+<h4>Get started</h4><ul>
+<li><a href="index.html">Start here</a></li>
+<li><a href="install.html">Install</a></li>
+<li><a href="first-set.html">Your first set</a></li>
+</ul>
+<h4>Guides</h4><ul>
+<li><a href="song-lists.html">Song lists</a></li>
+<li><a href="copy-folder.html">Copy to DJ software</a></li>
+<li><a href="usb-sticks.html">USB for decks</a></li>
+<li><a href="rekordbox-usb.html">Rekordbox USB</a></li>
+<li><a href="missing-songs.html">Missing songs</a></li>
+</ul>
+<h4>Reference</h4><ul>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="terminal.html">Terminal</a></li>
+<li><a href="help.html" aria-current="page">Help & glossary</a></li>
+</ul>
+</nav>
+</details>
+<p class="alpha">dubplate is in <strong>alpha</strong>: test builds until 1.0. Try anything on your own gear before a gig.</p>
+</aside>
+<main>
+<p class="kicker">Reference</p>
+<h1>Help, questions and DJ words</h1>
+<p class="lede">Fixes for the things that most often go wrong, answers to common questions, and plain explanations of the words used in these guides.</p>
+<h2 id="something-s-not-working">Something's not working</h2>
+<details class="q"><summary>Windows says "Windows protected your PC"</summary><p>dubplate isn't signed with a paid certificate. Click <strong>More info</strong>, then <strong>Run anyway</strong>. You only see this the first time.</p></details>
+<details class="q"><summary>A song is red but I know I have it</summary><p>dubplate matches file and folder names, not the tags inside files. Click <strong>Search the library myself…</strong> under the song, or check your list's spelling against the file name. If you added the song just now, click <strong>Rescan library</strong>.</p></details>
+<details class="q"><summary>A song is purple</summary><p>You don't have the exact version on your list (for example the Extended Mix). Tick it to copy the version you do have, or pick another from its menu.</p></details>
+<details class="q"><summary>Songs I expected are hidden</summary><p>They were already copied to that place before. Click <strong>✓ already copied</strong> to see them, and tick any to copy them again.</p></details>
+<details class="q"><summary>The deck doesn't show my songs (plain USB)</summary><p>Use the deck's <strong>folder</strong> view, not its library or playlist view, and a stick formatted as FAT32.</p></details>
+<details class="q"><summary>The deck doesn't show my rekordbox playlist</summary><p>In dubplate, pick the stick's top folder (like <code>E:\</code>), not a folder on it. Use a FAT32 stick, and eject it properly before unplugging. On the deck, choose the stick as the source and open <strong>PLAYLIST</strong>, not the folder view.</p></details>
+<details class="q"><summary>A BPM shows half or double</summary><p>Each song gets one tempo fitted to the whole song, as rekordbox's normal analysis does, so a mostly half-time song can read as half its tempo. dubplate can't correct a BPM by hand yet.</p></details>
+<details class="q"><summary>"couldn't write the stick"</summary><p>The message says why. Usually the stick is full or write-protected. If anything had changed on the stick, the message names the backup that holds the library from before; restore it from the Rekordbox USB tab.</p></details>
+<details class="q"><summary>"ffmpeg isn't installed"</summary><p>Needed only for the plain USB's conversions. On Windows, click <strong>Install ffmpeg now</strong> on the page. On Linux: <code>sudo apt install ffmpeg</code>.</p></details>
+<details class="q"><summary>"couldn't convert it - the file may be damaged"</summary><p>The file couldn't be read. Try playing it on your computer; you may need a fresh copy of that song.</p></details>
+<details class="q"><summary>Windows can't find my home server</summary><p>Check that you can open the server's music share (like <code>\\server\home\Music</code>) in File Explorer. On the server, the file-sharing settings and firewall must allow your network.</p></details>
+<details class="q"><summary>"Port 8765 is taken"</summary><p>Something else is using that port. Start dubplate with <code>dubplate serve --port 8766</code>.</p></details>
+<details class="q"><summary>Soulseek: "didn't accept the API key"</summary><p>The key in ⚙ Settings must match the one in slskd's options exactly, and slskd may need a restart after you add it.</p></details>
+<details class="q"><summary>Soulseek: "the API key is read-only"</summary><p>Give the key <code>role: readwrite</code> in slskd's options.</p></details>
+<details class="q"><summary>Soulseek: downloaded, but the song is still red</summary><p>The song is in slskd's download folder, which isn't one of your library folders. Add it under ⚙ Settings → <strong>Also look in</strong>.</p></details>
+<details class="q"><summary>Soulseek: "Nothing on Soulseek right now"</summary><p>Nobody online is sharing it at the moment, or it's named differently. Try again later, or change how the song is written on your list.</p></details>
+
+<h2 id="questions">Questions</h2>
+<details class="q"><summary>Can dubplate damage my music library?</summary><p>No. It only reads your library and copies from it. It never moves, renames, deletes or overwrites your files.</p></details>
+<details class="q"><summary>Does it change the tags in my files?</summary><p>No. Converted copies on a USB stick keep their tags and artwork; your originals aren't touched.</p></details>
+<details class="q"><summary>Does it work with Serato, Engine DJ or Denon decks?</summary><p>Copying to a folder works with any DJ software. The USB sticks are made for Pioneer CDJs and XDJs; a plain USB's folders may also play on other decks that read FAT32 sticks, but that isn't tested.</p></details>
+<details class="q"><summary>Is my music uploaded anywhere?</summary><p>No. Everything happens on your computer. The only thing dubplate sends over the internet is its check for updates (and, if you set it up, requests to your own slskd).</p></details>
+<details class="q"><summary>Do I need rekordbox for a rekordbox USB?</summary><p>No. dubplate writes the stick itself. You can still open the stick in rekordbox if you want.</p></details>
+
+<h2 id="dj-and-audio-words">DJ and audio words</h2>
+<dl class="terms">
+<dt>BPM</dt><dd>Beats per minute: a song's tempo.</dd>
+<dt>Key</dt><dd>The musical key a song is in. Mixing songs in compatible keys sounds smoother.</dd>
+<dt>Beat grid</dt><dd>Markers on every beat of a song, which the deck uses for beat counting, sync and quantize.</dd>
+<dt>Waveform</dt><dd>The picture of a song's sound on the deck's screen: an overview of the whole song, and a close-up that scrolls as it plays.</dd>
+<dt>CDJ / XDJ</dt><dd>Pioneer DJ's media players, the decks found in most clubs. They play music from USB sticks.</dd>
+<dt>rekordbox</dt><dd>Pioneer DJ's software for preparing music for its decks. dubplate can make the same kind of stick without it.</dd>
+<dt>FAT32 / exFAT</dt><dd>Ways a USB stick can be formatted. Every Pioneer deck reads FAT32; newer ones also read exFAT.</dd>
+<dt>Lossless</dt><dd>Audio with nothing removed: FLAC, ALAC, AIFF, WAV. Bigger files.</dd>
+<dt>FLAC</dt><dd>A lossless format that's smaller than WAV or AIFF. Older decks can't play it.</dd>
+<dt>AIFF / WAV</dt><dd>Lossless, uncompressed formats every deck plays. AIFF keeps tags and artwork more reliably.</dd>
+<dt>MP3 320</dt><dd>MP3 at its highest quality (320 kilobits per second). Much smaller than lossless; on a club system most people can't hear the difference.</dd>
+<dt>Extended Mix / Radio Edit</dt><dd>Versions of the same track. The extended mix has longer intros and outros for mixing; the radio edit is shorter.</dd>
+<dt>Playlist file (M3U)</dt><dd>A small file listing songs in order. DJ and music apps can import and export it.</dd>
+<dt>Soulseek / slskd</dt><dd>Soulseek is a network where people share music. slskd is a Soulseek client that runs in your browser.</dd>
+<dt>API key</dt><dd>A password one program (dubplate) uses to talk to another (slskd).</dd>
+</dl>
+<nav class="next" aria-label="More guides"><a href="terminal.html"><small>Previous</small><b>Terminal</b></a></nav>
+</main>
+</div>
+<script>if (window.matchMedia("(max-width: 860px)").matches) document.getElementById("nav").removeAttribute("open");</script>
+</body>
+</html>

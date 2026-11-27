@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Install · dubplate guides</title>
+<meta name="description" content="Download and run dubplate on Windows or Linux, and keep it up to date.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+<div class="shell">
+<aside class="side">
+<a class="brand" href="index.html"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="16" fill="var(--ink)"/>
+<circle cx="17" cy="17" r="12.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="9.5" fill="none" stroke="var(--bg)" stroke-opacity=".25" stroke-width=".8"/>
+<circle cx="17" cy="17" r="6" fill="var(--acc)"/><circle cx="17" cy="17" r="1.4" fill="var(--bg)"/></svg><div><b>dubplate</b><span>Guides</span></div></a>
+<details id="nav" open><summary>All guides</summary>
+<nav aria-label="Guides">
+<h4>Get started</h4><ul>
+<li><a href="index.html">Start here</a></li>
+<li><a href="install.html" aria-current="page">Install</a></li>
+<li><a href="first-set.html">Your first set</a></li>
+</ul>
+<h4>Guides</h4><ul>
+<li><a href="song-lists.html">Song lists</a></li>
+<li><a href="copy-folder.html">Copy to DJ software</a></li>
+<li><a href="usb-sticks.html">USB for decks</a></li>
+<li><a href="rekordbox-usb.html">Rekordbox USB</a></li>
+<li><a href="missing-songs.html">Missing songs</a></li>
+</ul>
+<h4>Reference</h4><ul>
+<li><a href="settings.html">Settings</a></li>
+<li><a href="terminal.html">Terminal</a></li>
+<li><a href="help.html">Help & glossary</a></li>
+</ul>
+</nav>
+</details>
+<p class="alpha">dubplate is in <strong>alpha</strong>: test builds until 1.0. Try anything on your own gear before a gig.</p>
+</aside>
+<main>
+<p class="kicker">Get started</p>
+<h1>Install dubplate</h1>
+<p class="lede">dubplate is a single program. Download it, run it, and it opens in your web browser. There's no installer and nothing else to set up.</p>
+<h2 id="windows">Windows</h2>
+<ol class="steps">
+<li><b>Download it</b>Go to dubplate's <a href="https://github.com/vampyshiv/dubplate/releases">releases page</a> and, under the newest release, download <code>dubplate-windows-x86_64.exe</code>.</li>
+<li><b>Put it somewhere handy</b>Your desktop or Documents folder is fine. It's the whole program.</li>
+<li><b>Double-click it</b>The first time, Windows may show <strong>"Windows protected your PC"</strong>, because dubplate isn't signed by a paid certificate. Click <span class="btn">More info</span>, then <span class="btn">Run anyway</span>. You only see this once, not after updates.</li>
+<li><b>Your browser opens dubplate's page</b>A small window opens as well. Keep it open while you use dubplate; closing it stops the program.</li>
+</ol>
+
+<h2 id="linux">Linux</h2>
+<ol class="steps">
+<li><b>Download it</b>From the <a href="https://github.com/vampyshiv/dubplate/releases">releases page</a>, download <code>dubplate-linux-x86_64</code>. It runs on any 64-bit Linux.</li>
+<li><b>Install it</b>In a terminal:
+<pre><code>install -m 755 ~/Downloads/dubplate-linux-x86_64 ~/.local/bin/dubplate</code></pre></li>
+<li><b>Run it</b>Type <code>dubplate</code>. Your browser opens the page at <code>http://localhost:8765</code>. Keep the terminal open while you use it; press <kbd>Ctrl</kbd>+<kbd>C</kbd> there to stop.</li>
+</ol>
+
+<div class="note tip"><strong>Already running?</strong>Running dubplate again while it's open just opens the page again. You can't start it twice by accident.</div>
+
+<h2 id="where-it-looks-for-your-music">Where it looks for your music</h2>
+<p>On Linux dubplate starts with your <code>Music</code> folder. On Windows it looks for music on your home server first (see below) and otherwise asks. You can change this, and add more folders, any time in <a href="settings.html">⚙ Settings</a>.</p>
+<p>The first time, dubplate reads your whole library. That takes about a second for 25,000 songs on a local drive, longer over a network. After that it opens instantly and checks for new songs in the background.</p>
+
+<h3>Music on a home server (Windows)</h3>
+<p>If your music lives on a server and you copy to your Windows PC, dubplate finds the server by itself:</p>
+<ul>
+<li>It tries the server that worked last time, then scans your network for about a second, then asks you. Type the server's name (like <code>myserver.local</code>) and it keeps working even when the server's address changes.</li>
+<li>Windows asks you to sign in to the shared folder once, and remembers it.</li>
+<li>It expects the music at <code>\\server\home\Music</code>. If yours is somewhere else, pick it in <a href="settings.html">⚙ Settings</a>.</li>
+</ul>
+
+<h2 id="updates">Updates</h2>
+<p>When a new version is out, dubplate shows a card at the top of its page with what changed. Click <span class="btn primary">Update now</span>: it downloads the new version, checks it hasn't been tampered with, keeps your current version as a backup, and restarts.</p>
+<ul>
+<li>Changed your mind? <strong>Go back to …</strong> at the bottom of the page returns to the version you had.</li>
+<li>dubplate checks for updates at most every 6 hours, and sends nothing else. Untick <strong>check automatically</strong> at the bottom of the page to stop that; <strong>Check for updates</strong> still works.</li>
+<li>Your settings, your library list and what you've copied are kept through updates.</li>
+</ul>
+
+<div class="note careful"><strong>Alpha builds</strong>Until version 1.0, every release is a test build (an "alpha" or "beta"). Test builds update to newer test builds. Expect rough edges, and check anything important on your own gear first.</div>
+<nav class="next" aria-label="More guides"><a href="index.html"><small>Previous</small><b>Start here</b></a><a href="first-set.html"><small>Next</small><b>Your first set</b></a></nav>
+</main>
+</div>
+<script>if (window.matchMedia("(max-width: 860px)").matches) document.getElementById("nav").removeAttribute("open");</script>
+</body>
+</html>
