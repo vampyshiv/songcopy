@@ -277,8 +277,13 @@ fn run(cli: Cli) -> i32 {
                     for b in &all {
                         println!("  {b}");
                     }
-                    // quoted only when needed: on Windows a quote after a trailing \ would be escaped
-                    let shown = if stick.contains(' ') { format!("\"{}\"", if stick.ends_with('\\') { format!("{stick}\\") } else { stick.clone() }) } else { stick.clone() };
+                    // quoted for the shell: Windows double quotes (a trailing \ doubled so it doesn't
+                    // escape the quote), elsewhere single quotes
+                    let shown = if WINDOWS {
+                        format!("\"{}{}\"", stick, if stick.ends_with('\\') { "\\" } else { "" })
+                    } else {
+                        format!("'{}'", stick.replace('\'', "'\\''"))
+                    };
                     println!("Put one back with: dubplate restore-stick {shown} \"<backup>\"");
                     0
                 }
@@ -286,7 +291,7 @@ fn run(cli: Cli) -> i32 {
                     Ok(r) => {
                         println!("Put back the stick's library from {b}.");
                         if let Some(p) = &r.problem {
-                            eprintln!("But: {p}. Try the stick on a deck before a gig, or restore another backup.");
+                            eprintln!("But {p}. Try the stick on a deck before a gig, or restore another backup.");
                         }
                         if let Some(n) = r.backup {
                             println!("What it held just now is backed up too ({n}).");
@@ -297,7 +302,7 @@ fn run(cli: Cli) -> i32 {
                                 println!("  {m}");
                             }
                         }
-                        0
+                        i32::from(r.problem.is_some())
                     }
                     Err(e) => {
                         eprintln!("{e}");

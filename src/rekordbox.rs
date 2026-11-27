@@ -281,6 +281,33 @@ fn lock_stick(stick: &str) -> Result<StickLock, String> {
     }
 }
 
+/// rbxport's own lock on the stick (`.rbxport-write.lock`), so dubplate's moves and copies of
+/// the library never cross an rbxport export (from dubplate or the rbxport app). Waits a while
+/// for one that's running. Never held while calling into rbxport, which takes it itself.
+fn rbx_lock(stick: &str, exclusive: bool) -> Result<std::fs::File, String> {
+    let f = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(Path::new(stick).join(".rbxport-write.lock"))
+        .map_err(|e| format!("couldn't lock the stick's library ({e})"))?;
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        let r = if exclusive { f.try_lock() } else { f.try_lock_shared() };
+        match r {
+            Ok(()) => return Ok(f),
+            Err(std::fs::TryLockError::WouldBlock) if std::time::Instant::now() < until => {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+            Err(std::fs::TryLockError::WouldBlock) => {
+                return Err("Another program is writing this stick's library; try again when it's done.".into())
+            }
+            Err(std::fs::TryLockError::Error(e)) => return Err(format!("couldn't lock the stick's library ({e})")),
+        }
+    }
+}
+
 /// Write `songs` to the stick at `stick` as the playlist `name` (replacing a playlist of that
 /// name; other playlists on the stick stay). Songs that can't be read are left out and listed.
 pub fn export_set(
@@ -367,7 +394,8 @@ pub fn export_set(
                 keep_backups(stick, &[b]);
             }
             let note = kept.map(|b| format!(" The stick's library from before is backed up ({b})."));
-            return Err(format!("couldn't write the stick: {e}.{}", note.unwrap_or_default()));
+            let e = e.to_string();
+            return Err(format!("couldn't write the stick: {}.{}", e.trim_end_matches('.'), note.unwrap_or_default()));
         }
     };
     let backup = match backup {
@@ -436,7 +464,12 @@ fn files_state(dir: &Path) -> std::collections::HashMap<std::path::PathBuf, (u64
 /// library.
 fn settle(stick: &str) -> Result<(), String> {
     recover(stick)?;
-    rbl_export::recover(Path::new(stick)).map_err(|e| format!("the stick has an unfinished export that couldn't be settled ({e}); nothing was changed"))
+    match rbl_export::recover(Path::new(stick)) {
+        Ok(()) => Ok(()),
+        // the interrupted export was rolled back: the stick holds the library from before it
+        Err(e) if e.to_string().contains("previous generation restored") => Ok(()),
+        Err(e) => Err(format!("the stick has an unfinished export that couldn't be settled ({e})")),
+    }
 }
 
 // ---------------------------------------------------------------------------- backups
@@ -455,8 +488,15 @@ fn data_dir() -> String {
 }
 
 /// the serial number the stick got when it was formatted, when the system tells it: a stick
-/// made by copying another stick's files has the same files but its own serial
+/// made by copying another stick's files has the same files but its own serial. The same on
+/// Windows and Linux: the last 8 hex digits (Windows gives FAT/exFAT/NTFS sticks' 32-bit serial,
+/// Linux shows it as `1A2B-3C4D`, or 16 digits for NTFS).
 fn volume_serial(stick: &str) -> Option<String> {
+    let s: String = volume_serial_raw(stick)?.chars().filter(char::is_ascii_hexdigit).collect::<String>().to_ascii_uppercase();
+    (s.len() >= 8).then(|| s[s.len() - 8..].to_string())
+}
+
+fn volume_serial_raw(stick: &str) -> Option<String> {
     #[cfg(windows)]
     {
         use std::os::windows::ffi::OsStrExt;
@@ -524,18 +564,23 @@ extern "system" {
 fn stick_id(stick: &str, make: bool) -> Result<Option<String>, String> {
     let f = own_dir(stick).join("stick-id");
     let serial = volume_serial(stick);
-    let text = std::fs::read_to_string(&f).unwrap_or_default();
+    let text = match std::fs::read(&f) {
+        Ok(b) => String::from_utf8_lossy(&b).into_owned(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(format!("couldn't read the stick ({e})")),
+    };
     let mut lines = text.lines().map(str::trim);
     let (id, stored) = (lines.next().unwrap_or(""), lines.next().filter(|s| !s.is_empty()));
     let valid = id.len() == 16 && id.bytes().all(|b| b.is_ascii_hexdigit());
     let same_stick = match (stored, serial.as_deref()) {
-        (Some(a), Some(b)) => a == b,
+        (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
         _ => true, // nothing to tell them apart by
     };
     let write = |id: &str| -> Result<(), String> {
         let fail = |e: std::io::Error| format!("couldn't write to the stick ({e}) - nothing was changed");
         std::fs::create_dir_all(own_dir(stick)).map_err(fail)?;
-        std::fs::write(&f, format!("{id}\n{}\n", serial.as_deref().unwrap_or(""))).map_err(fail)
+        // written whole or not at all: a stick pulled out midway keeps its old name
+        paths::write_atomic(&f.to_string_lossy(), format!("{id}\n{}\n", serial.as_deref().unwrap_or("")).as_bytes()).map_err(fail)
     };
     if valid && same_stick {
         if make && stored.is_none() && serial.is_some() {
@@ -594,7 +639,7 @@ fn same_tree(a: &Path, b: &Path) -> bool {
 /// rbxport's record of what it put there
 const LIBRARY_DIRS: [&str; 2] = ["rekordbox", "rbxport"];
 /// backups kept per stick: the first one dubplate made (the library from before dubplate ever
-/// touched the stick) and the newest ones, this many in all (plus one being restored)
+/// touched the stick) and the newest ones, this many in all
 const KEEP_BACKUPS: usize = 10;
 
 /// does the stick's library still match backup `which` exactly?
@@ -613,9 +658,10 @@ fn library_matches(stick: &str, which: &str) -> bool {
 /// on a stick without one. Callers prune with `keep_backups` once they know the backup stays.
 fn backup(stick: &str) -> Result<Option<String>, String> {
     let root = rbl_export::export_root(Path::new(stick));
-    if !root.join("rekordbox").is_dir() {
+    if !has_library(stick) {
         return Ok(None);
     }
+    let _rbx = rbx_lock(stick, false)?; // no rbxport export writes it while it's copied
     let Some(id) = stick_id(stick, true)? else { return Ok(None) };
     let base = backups_base(&id);
     let stamp = chrono::Local::now().format("%Y-%m-%d %H.%M.%S").to_string();
@@ -701,7 +747,8 @@ pub fn list_backups(stick: &str) -> Vec<String> {
 
 /// does the stick have a rekordbox library?
 pub fn has_library(stick: &str) -> bool {
-    rbl_export::export_root(Path::new(stick)).join("rekordbox").is_dir()
+    let db = rbl_export::export_root(Path::new(stick)).join("rekordbox");
+    db.join("export.pdb").is_file() || db.join("exportLibrary.db").is_file()
 }
 
 fn valid_name(which: &str) -> bool {
@@ -735,22 +782,32 @@ fn recover(stick: &str) -> Result<(), String> {
         _ => "PIONEER".to_string(),
     };
     let root = Path::new(stick).join(&root_name);
+    let _rbx = rbx_lock(stick, true)?;
     for d in LIBRARY_DIRS {
         let old = work.join(format!("old-{d}"));
-        if !old.is_dir() {
+        // a folder the restore put where the stick had none (marked before it was moved in)
+        let added = work.join(format!("added-{d}")).exists();
+        if !old.is_dir() && !added {
             continue;
         }
         let back = || -> std::io::Result<()> {
             if root.join(d).exists() {
-                // the backup's copy, half put in place
-                std::fs::rename(root.join(d), work.join(format!("half-{d}")))?;
+                // the backup's copy, (half) put in place: set aside, replacing an earlier one
+                let half = work.join(format!("half-{d}"));
+                if half.exists() {
+                    std::fs::remove_dir_all(&half)?;
+                }
+                std::fs::rename(root.join(d), half)?;
             }
-            std::fs::rename(&old, root.join(d))
+            if old.is_dir() {
+                std::fs::rename(&old, root.join(d))?;
+            }
+            Ok(())
         };
         back().map_err(|e| {
             format!(
-                "a restore of this stick was cut off, and its library couldn't be put back ({e}). It's kept in {} on the stick; nothing was changed.",
-                old.display()
+                "a restore of this stick was cut off, and its library couldn't be put back ({e}). It's kept in {} on the stick.",
+                work.display()
             )
         })?;
     }
@@ -807,13 +864,12 @@ pub fn restore(stick: &str, which: &str) -> Result<Restored, String> {
         return Err(format!("couldn't put the backup back ({e}); the stick wasn't changed"));
     }
     // 2. swap: the library out of the way, the backup in - while no rbxport writes the stick
-    let rbx_lock = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(Path::new(stick).join(".rbxport-write.lock"));
-    let rbx_lock = match rbx_lock {
-        Ok(f) if f.lock().is_ok() => f,
-        _ => {
+    let rbx_lock = match rbx_lock(stick, true) {
+        Ok(f) => f,
+        Err(e) => {
             let _ = std::fs::remove_dir_all(&work);
             unused(&before);
-            return Err("couldn't lock the stick's library; the stick wasn't changed".into());
+            return Err(format!("{e} The stick wasn't changed."));
         }
     };
     let mut done: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
@@ -825,6 +881,9 @@ pub fn restore(stick: &str, which: &str) -> Result<Restored, String> {
                 done.push((old(d), root.join(d)));
             }
             if staged(d).is_dir() {
+                if !old(d).exists() {
+                    std::fs::write(work.join(format!("added-{d}")), b"")?; // so `recover` can undo it
+                }
                 std::fs::rename(staged(d), root.join(d))?;
                 done.push((root.join(d), staged(d)));
             }
@@ -850,9 +909,36 @@ pub fn restore(stick: &str, which: &str) -> Result<Restored, String> {
     }
     // check what was put back; songs a later export removed can't come back from a backup of
     // the library
+    let only_pdb = !from.join("rekordbox").join("exportLibrary.db").is_file(); // written by older rekordbox
     let (missing, problem) = match rbl_export::verify(Path::new(stick)) {
-        Ok(v) if v.parsed && v.errors.is_empty() => (v.missing_audio, None),
-        Ok(v) => (v.missing_audio, Some(format!("the restored library has problems: {}", v.errors.join("; ")))),
+        Ok(v) => {
+            // expected after a restore: the analysis of songs a later export removed, files a
+            // later export rewrote, and (for older rekordbox's sticks) only one database
+            // a removed song's analysis is gone with its audio: as many of those as missing songs
+            let gone_analysis = v.errors.iter().filter(|e| e.starts_with("Missing or invalid analysis")).count();
+            let expected_gone = gone_analysis <= v.missing_audio.len();
+            let real: Vec<&String> = v
+                .errors
+                .iter()
+                .filter(|e| {
+                    !((expected_gone && e.starts_with("Missing or invalid analysis"))
+                        || e.starts_with("Missing exported analysis companion")
+                        || e.starts_with("Exported audio content changed")
+                        || e.starts_with("Exported analysis content changed")
+                        || (only_pdb && e.as_str() == "Both Device Library and OneLibrary must be present"))
+                })
+                .collect();
+            let problem = (!real.is_empty() || (!v.parsed && !only_pdb)).then(|| {
+                let shown: Vec<&str> = real.iter().take(3).map(|e| e.as_str()).collect();
+                let more = real.len().saturating_sub(3);
+                format!(
+                    "the restored library has problems: {}{}",
+                    if shown.is_empty() { "it couldn't be read".to_string() } else { shown.join("; ") },
+                    if more > 0 { format!(" (and {more} more)") } else { String::new() }
+                )
+            });
+            (v.missing_audio, problem)
+        }
         Err(e) => (Vec::new(), Some(format!("the restored library couldn't be read: {e}"))),
     };
     Ok(Restored { backup: before, missing, problem })
@@ -994,6 +1080,8 @@ mod tests {
             let new = stick_id(&st, true).unwrap().unwrap();
             assert_ne!(new, id);
         }
+        // the same stick seen by Windows (1A2B3C4D) and Linux (1A2B-3C4D) is one stick
+        assert_eq!(volume_serial(&st).map(|s| s.len()), serial.as_ref().map(|_| 8));
         // written by an older dubplate without the serial: learnt, same name
         std::fs::write(tmp.path().join(".dubplate/stick-id"), format!("{id}\n")).unwrap();
         assert_eq!(stick_id(&st, true).unwrap().as_ref(), Some(&id));
@@ -1048,6 +1136,16 @@ mod tests {
         recover(&st).unwrap();
         assert!(pioneer.join("rekordbox/export.pdb").is_file() && !pioneer.join("rekordbox/marker").exists() && !work.exists());
         assert!(rbl_export::verify(&stick).unwrap().is_ok());
+        // a library folder the cut-off restore added where the stick had none is taken out again
+        std::fs::create_dir_all(&work).unwrap();
+        std::fs::write(work.join("root"), "PIONEER").unwrap();
+        std::fs::write(work.join("added-rbxport"), b"").unwrap();
+        std::fs::rename(pioneer.join("rbxport"), stick.join("keep-rbxport")).unwrap();
+        std::fs::create_dir_all(pioneer.join("rbxport")).unwrap(); // the backup's, put in place
+        std::fs::create_dir_all(work.join("half-rbxport")).unwrap(); // left by an earlier attempt
+        recover(&st).unwrap();
+        assert!(!pioneer.join("rbxport").exists() && !work.exists());
+        std::fs::rename(stick.join("keep-rbxport"), pioneer.join("rbxport")).unwrap();
         // ...and one whose swap had finished stands (only its leftovers go)
         let done = stick.join(".dubplate/restore-done");
         std::fs::create_dir_all(done.join("old-rekordbox")).unwrap();
@@ -1068,6 +1166,7 @@ mod tests {
         assert_eq!(walk_files(&other.join("Contents")).len(), 2);
         let back = restore(&o, &b).unwrap();
         assert_eq!(back.missing.len(), 1, "{back:?}");
+        assert!(back.problem.is_none(), "removed songs are reported as missing, not as a problem: {back:?}");
         // two sticks keep their own backups
         assert_ne!(stick_id(&st, false).unwrap(), stick_id(&o, false).unwrap());
         assert_eq!(list_backups(&o).len(), 2); // before the second A, and before the restore
@@ -1080,6 +1179,20 @@ mod tests {
             assert!(list_backups(&o).is_empty());
             assert_ne!(stick_id(&o, true).unwrap().unwrap(), id);
         }
+        // a stick written by older rekordbox (export.pdb only): dubplate adds to it, and putting
+        // the first backup back is fine, not "a problem"
+        let old = tmp.path().join("stick3");
+        std::fs::create_dir_all(&old).unwrap();
+        let ol = old.to_string_lossy().into_owned();
+        export_set(&ol, "Old", &songs[..1], None, &|_| {}).unwrap();
+        std::fs::remove_file(old.join("PIONEER/rekordbox/exportLibrary.db")).unwrap();
+        let _ = std::fs::remove_dir_all(old.join("PIONEER/rbxport"));
+        assert!(has_library(&ol));
+        let r = export_set(&ol, "New", &songs[1..2], None, &|_| {}).unwrap();
+        let first = r.backup.expect("the old library was backed up");
+        let back = restore(&ol, &first).unwrap();
+        assert!(back.problem.is_none(), "{back:?}");
+        assert!(!old.join("PIONEER/rekordbox/exportLibrary.db").exists());
         // nothing readable: an error, and no backup used up
         let n = list_backups(&st).len();
         assert!(export_set(&st, "Three", &set[2..], None, &|_| {}).is_err());

@@ -217,13 +217,14 @@ databases, not the music). The page lists them under the stick, each with **Rest
 in the terminal, `dubplate restore-stick STICK`. Restore puts the stick's playlists back as
 they were, and first backs up what the stick holds now.
 
-- An export that fails, or that changes nothing, doesn't use up a backup.
+- An export that changes nothing, or that fails before writing anything, doesn't use up a
+  backup.
 - dubplate keeps the **first** backup (the library from before dubplate first touched the
   stick) plus the newest ones, 10 in all. A backup you restore is never pushed out by the one
   made just before it.
 - Backups belong to the stick, not to the drive letter it gets today. dubplate leaves a small
-  folder on it, `.dubplate`, with the stick's id (and its serial number, so a stick copied
-  from another one gets backups of its own).
+  folder on it, `.dubplate`, with the stick's id. On Windows and Linux it also notes the
+  stick's serial number, so a stick copied from another one gets backups of its own.
 - Only one dubplate writes a stick at a time; a second one (another window, a terminal) is
   told to wait.
 - Restoring is only possible on the computer dubplate runs on, not from another device.
