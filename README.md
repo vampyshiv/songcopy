@@ -11,7 +11,31 @@ and get.
 already in the destination it's skipped, and a different file with the same name gets
 " (2)" added rather than being replaced.
 
-One Python file, standard library only (Python 3.8+). Nothing to install.
+A single small program for Windows and Linux, written in Rust. Nothing else to install,
+and it updates itself.
+
+## Install
+
+Download the program for your computer from the [latest release](../../releases/latest):
+
+- **Windows:** `songcopy-windows-x86_64.exe`. Put it wherever you like (the desktop is
+  fine) and double-click it. Windows may warn about an "unknown publisher" because the app
+  isn't code-signed: click **More info → Run anyway**.
+- **Linux:** `songcopy-linux-x86_64`. It runs on any 64-bit Linux:
+
+  ```
+  install -m 755 songcopy-linux-x86_64 ~/.local/bin/songcopy
+  ```
+
+### Updates
+
+The page tells you when a new version is out and shows what changed. Click **Update now**:
+songcopy downloads it, checks it against the release's checksum, keeps the current version
+and restarts. **Go back to …** in the page footer returns to the version you had.
+
+- It asks GitHub for the newest release at most every 6 hours, and nothing else is sent.
+- Untick **check automatically** to turn that off; **Check for updates** still works.
+- In a terminal: `songcopy update`, `songcopy update --check` or `songcopy update --rollback`.
 
 ## Using it
 
@@ -58,7 +82,7 @@ songcopy copy  mylist.xlsx /media/usb --number --playlist --prefer mp3
 | `--name NAME` | playlist folder name for `--usb` (default: the list's file name) |
 | `--recopy` | also copy songs already copied to that destination on an earlier run |
 | `--dry-run` | show what would happen, copy nothing |
-| `--music PATH` | the library (default `~/Music`) |
+| `--music PATH` | the library (default `~/Music`; on Windows the server's share) |
 | `serve --no-browser --dest FOLDER --host 0.0.0.0 --port N` | web page options |
 
 Songs it can't find are printed in red and saved next to your list as `<list>-missing.csv`.
@@ -95,8 +119,7 @@ playlists, waveforms or beat grids on the decks.
 ### Windows: songcopy.exe (e.g. straight into a Traktor folder)
 
 The music stays on the server; songs are copied over the network into a folder on the
-Windows PC. **Download `songcopy.exe`** from the latest
-[release](../../releases) and double-click it. No Python needed. It:
+Windows PC. Double-click `songcopy-windows-x86_64.exe` (see [Install](#install)). It:
 
 - finds the server by itself on whatever network you're on: the name or address that worked
   last time, then a ~1 second scan of the network, then asks you. Type the server's
@@ -133,31 +156,41 @@ the new network's addresses. songcopy finds the new address by itself.
   album over live recordings, compilations and remix albums, then your chosen format.
 - **Long paths.** Paths over Windows' 260-character limit are handled.
 
-The library is read in about a second for 25,000 songs. The song list is saved, so the
+The library is read in about a second for 25,000 songs, and a list of 1,000 songs is
+matched in well under a second. The song list is saved, so the
 web page opens instantly and refreshes in the background, which matters over a network
 share. The saved list lives in `~/.cache/songcopy/` (or `%LOCALAPPDATA%\songcopy\` on Windows).
 
 ## Development
 
-```
-python3 -m unittest discover -s tests
-```
-
-The tests build a small fake library in a temp folder, so they never touch real music.
-
-**Windows exe.** Every push to `main` builds `songcopy.exe` on GitHub's Windows machines
-(`.github/workflows/windows-exe.yml`) with PyInstaller. That build:
-- runs the tests on Windows,
-- smoke-tests the built `.exe` (including a path over 260 characters),
-- keeps the `.exe` as a downloadable build artifact.
-
-Pushing a version tag also publishes a release:
+You need [Rust](https://rustup.rs). Then:
 
 ```
-git tag v1.2.0 && git push origin v1.2.0
+cargo test             # unit tests, on a fake library in a temp folder (never real music)
+cargo build --release  # target/release/songcopy
 ```
 
-Bump `VERSION` in `songcopy.py` first.
+- **Code layout** (`src/`):
+  - `library.rs`: reading the library and matching.
+  - `text.rs`: name normalisation, version tags, and a port of Python's difflib.
+  - `lists.rs`: reading lists.
+  - `copy.rs`: copying, USB conversion, the copy memory.
+  - `server.rs` and `page.html`: the web page.
+  - `discover.rs`: settings and the Windows server finder.
+  - `update.rs`: the updater.
+- **Builds.** Every push builds and tests the Windows and Linux programs on GitHub's machines
+  (`.github/workflows/build.yml`), including a smoke test of each built program
+  (`tests/smoke_exe.py`, with a path over Windows' 260-character limit).
+- **Releases.** Bump the version in `Cargo.toml`, add its notes to `CHANGELOG.md` (the
+  updater shows them), then:
+
+  ```
+  git tag v2.1.0 && git push origin v2.1.0
+  ```
+
+  The release gets both programs and a `SHA256SUMS` file the updater checks downloads against.
+
+Versions before 2.0 were a single Python script; it's in the git history.
 
 ## License
 

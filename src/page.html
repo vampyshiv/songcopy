@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Song Copy</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--ink:#1d1d1f;--mute:#6b6b70;--line:#e3e1dc;--acc:#2f6fdf;--acc-ink:#fff;
+--alt:#7b4bc4;--alt-bg:#f1eafb;--ok:#1f8a4c;--ok-bg:#e6f4ec;--warn:#a26300;--warn-bg:#fdf1dc;--bad:#c0392b;--bad-bg:#fbe7e4;--shadow:0 1px 2px rgba(0,0,0,.05),0 4px 16px rgba(0,0,0,.04)}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--card:#1e1e21;--ink:#ececee;--mute:#9a9aa2;--line:#303036;--acc:#5b8ff0;
+--alt:#b996f2;--alt-bg:#2a2140;--ok:#4cc27e;--ok-bg:#16301f;--warn:#e6a845;--warn-bg:#33270f;--bad:#f07060;--bad-bg:#3a1a17;--shadow:none}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1060px;margin:0 auto;padding:28px 18px 80px}
+h1{font-size:26px;margin:0 0 2px;letter-spacing:-.01em}
+.sub{color:var(--mute);margin:0 0 22px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow)}
+.step{display:flex;gap:10px;align-items:baseline;margin:0 0 12px}
+.step b{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--acc);color:var(--acc-ink);font-size:13px;flex:none}
+.step h2{font-size:17px;margin:0}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--mute);cursor:pointer;transition:.15s}
+.drop.over,.drop:hover{border-color:var(--acc);color:var(--ink)}
+.drop strong{color:var(--ink)}
+textarea{width:100%;min-height:110px;margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px;font:13px/1.4 ui-monospace,Menlo,monospace;background:var(--bg);color:var(--ink);resize:vertical}
+input[type=text]{flex:1;min-width:0;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;background:var(--bg);color:var(--ink)}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;padding:8px 14px;cursor:pointer}
+button:hover{border-color:var(--acc)}
+button.primary{background:var(--acc);border-color:var(--acc);color:var(--acc-ink);font-weight:600;padding:10px 18px}
+button:disabled{opacity:.45;cursor:default}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.opts{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;color:var(--mute);font-size:14px}
+.opts label{display:flex;gap:6px;align-items:center;cursor:pointer}
+select{font:inherit;border:1px solid var(--line);border-radius:8px;padding:4px 6px;background:var(--bg);color:var(--ink);max-width:100%}
+.browser{margin-top:8px;border:1px solid var(--line);border-radius:10px;max-height:220px;overflow:auto;display:none}
+.browser div{padding:6px 12px;cursor:pointer;border-bottom:1px solid var(--line);font-size:14px}
+.browser div:hover{background:var(--bg)}
+.small{font-size:13px;color:var(--mute)}
+.summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.pill{border-radius:999px;padding:6px 14px;font-weight:600;font-size:14px;cursor:pointer;border:2px solid transparent}
+.pill.alt{background:var(--alt-bg);color:var(--alt)}.pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.warn{background:var(--warn-bg);color:var(--warn)}.pill.bad{background:var(--bad-bg);color:var(--bad)}
+.pill.active{border-color:currentColor}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;color:var(--mute);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:.04em;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+tr.missing td{background:var(--bad-bg)}
+tr.guess td{background:var(--warn-bg)}
+tr.version td{background:var(--alt-bg)}
+.tag.version{background:var(--alt);color:var(--card)}
+tr.version .note{color:var(--alt)}
+.tag{font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap}
+.tag.found{background:var(--ok-bg);color:var(--ok)}.tag.guess{background:var(--warn);color:var(--card)}.tag.missing{background:var(--bad);color:#fff}
+.path{font-size:12.5px;color:var(--mute);overflow-wrap:anywhere}
+td{overflow-wrap:break-word}
+table{table-layout:fixed;min-width:560px}
+th:nth-child(1){width:34px}th:nth-child(2){width:40px}th:nth-child(3){width:28%}
+td select{width:100%}
+.fmt{font-size:11px;border:1px solid var(--line);border-radius:5px;padding:0 5px;color:var(--mute);margin-left:4px}
+.note{font-size:12.5px;color:var(--warn)}
+.sugg{font-size:12.5px;margin-top:4px}
+.sugg a{color:var(--acc);cursor:pointer;text-decoration:underline;display:block}
+.play{border:none;background:none;padding:0 4px;color:var(--acc);font-size:15px;cursor:pointer}
+.bar{height:10px;background:var(--line);border-radius:6px;overflow:hidden;margin:10px 0}
+.bar i{display:block;height:100%;background:var(--acc);width:0;transition:width .3s}
+.banner{border-radius:10px;padding:12px 14px;margin-top:12px}
+.banner.ok{background:var(--ok-bg);color:var(--ok)}.banner.bad{background:var(--bad-bg);color:var(--bad)}
+.hidden{display:none!important}
+.err{color:var(--bad);margin-top:8px}
+</style></head><body><main>
+<h1>Song Copy</h1>
+<p class="sub">Give it a list of songs. It finds them in <b id="root">your music folder</b> and copies them to another folder.
+It only copies, so nothing in your library is moved or deleted. <span id="libinfo" class="small"></span> <a href="#" id="rescan" class="small">Rescan library</a></p>
+
+<section class="card hidden" id="updcard" style="border-color:var(--acc)">
+  <div class="row" style="justify-content:space-between"><h2 style="font-size:17px;margin:0" id="updtitle"></h2>
+  <span class="row"><button class="primary" id="updgo">Update now</button><button id="updlater">Not now</button></span></div>
+  <div class="small" id="updnotes" style="white-space:pre-wrap;max-height:220px;overflow:auto;margin-top:10px"></div>
+  <div class="small" id="updmsg" style="margin-top:8px"></div>
+</section>
+
+<section class="card">
+  <div class="step"><b>1</b><h2>Your song list</h2></div>
+  <div class="drop" id="drop"><strong>Drop a file here</strong> or click to choose<br>
+  <span class="small">Spreadsheet (.csv, .xlsx), text file (one song per line), or playlist (.m3u)</span></div>
+  <input type="file" id="file" class="hidden" accept=".csv,.tsv,.txt,.xlsx,.m3u,.m3u8">
+  <details style="margin-top:10px"><summary class="small" style="cursor:pointer">…or paste a list</summary>
+  <textarea id="paste" placeholder="Depeche Mode - World in My Eyes&#10;Robyn - Dancing On My Own&#10;Sigur Rós - Rembihnútur"></textarea>
+  <div class="row" style="margin-top:8px"><button id="pastego">Find these songs</button></div></details>
+  <div class="opts"><label>If a song exists as both FLAC and MP3, use
+    <select id="prefer"><option value="flac">FLAC (best quality)</option><option value="mp3">MP3 (smaller, plays anywhere)</option><option value="any">Either one</option></select></label></div>
+  <div id="loaderr" class="err"></div>
+</section>
+
+<section class="card hidden" id="results">
+  <div class="step"><b>2</b><h2>Check what was found</h2></div>
+  <div class="summary" id="summary"></div>
+  <div class="row" style="margin-bottom:10px"><button id="dlmissing" class="hidden">⬇ Download the missing songs as a CSV</button>
+    <span class="small" id="filterinfo"></span></div>
+  <div class="tablewrap"><table><thead><tr><th style="width:28px"><input type="checkbox" id="all" checked title="select all"></th><th>#</th><th>On your list</th><th>File that will be copied</th></tr></thead>
+  <tbody id="tbody"></tbody></table></div>
+</section>
+
+<section class="card hidden" id="copycard">
+  <div class="step"><b>3</b><h2>Copy them to</h2></div>
+  <p class="small" style="margin:-4px 0 10px">Songs already copied to this folder on an earlier run are hidden, so after adding missing songs to your library you can re-run the same list and only copy the new ones.</p>
+  <div class="row"><input type="text" id="dest" placeholder="/home/you/Desktop/Party mix" spellcheck="false">
+  <button id="browse">Browse…</button></div>
+  <div class="browser" id="browser"></div>
+  <div class="opts" style="color:var(--ink)">
+    <label><input type="radio" name="mode" value="files" id="mode_files" checked> Copy the files as they are</label>
+    <label><input type="radio" name="mode" value="usb" id="mode_usb"> USB stick for CDJs / XDJs</label>
+  </div>
+  <div class="opts" id="filesopts">
+    <label><input type="checkbox" id="folders"> Keep Artist / Album folders</label>
+    <label><input type="checkbox" id="number"> Number files in list order (001, 002…)</label>
+    <label><input type="checkbox" id="playlist"> Also make a playlist file</label>
+  </div>
+  <div id="usbopts" class="hidden">
+    <div class="opts"><label>Playlist folder on the stick <input type="text" id="usb_name" style="min-width:12em" spellcheck="false"></label>
+      <label>Songs the decks can't play (FLAC, Opus…) become
+      <select id="usb_format"><option value="aiff">AIFF (lossless)</option><option value="mp3">MP3 320 kbps (smaller)</option></select></label></div>
+    <p class="small" style="margin:8px 0 0">Pick the USB stick (or a folder on it) above. Songs go into one folder, numbered in your list's order,
+    and anything an older deck (XDJ-1000, CDJ-900/2000) can't play is converted; tags and artwork are kept. On the deck, browse the stick with its
+    <b>folder</b> view. Use a stick formatted as <b>FAT32</b>, the one format every Pioneer deck reads.
+    <span id="noffmpeg" class="hidden" style="color:var(--bad)"><br>ffmpeg isn't installed on this computer, so songs that need converting will fail. <span id="ffmpeghelp">Install ffmpeg, then restart Song Copy.</span></span></p>
+  </div>
+  <div class="row" style="margin-top:14px"><button class="primary" id="go">Copy songs</button><span class="small" id="gohint"></span></div>
+  <div id="progress" class="hidden"><div class="bar"><i id="barfill"></i></div><div class="small" id="ptext"></div></div>
+  <div id="done"></div>
+</section>
+<p class="small" style="text-align:center;margin-top:24px"><span id="ver"></span> ·
+ <a href="#" id="updcheck">Check for updates</a> ·
+ <label style="cursor:pointer"><input type="checkbox" id="updauto"> check automatically</label>
+ <span id="updback"></span><br><span id="updstatus"></span></p>
+</main>
+<audio id="audio"></audio>
+<script>
+const $=s=>document.querySelector(s);
+let RESULTS=[], FILTER=null, LISTNAME='list';
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const kb=n=>n>1e9?(n/1073741824).toFixed(1)+' GB':(n/1048576).toFixed(1)+' MB';
+async function api(p,body){const r=await fetch(p,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});return r.json()}
+const KEEP=['dest','prefer','folders','number','playlist','usb_format','mode_usb'];
+try{for(const k of KEEP){const v=localStorage.getItem('sc_'+k);if(v==null)continue;const el=$('#'+k);(el.type==='checkbox'||el.type==='radio')?el.checked=v==='1':el.value=v}}catch(e){}
+if($('#mode_usb').checked)$('#mode_files').checked=false;
+function remember(){try{for(const k of KEEP){const el=$('#'+k);localStorage.setItem('sc_'+k,(el.type==='checkbox'||el.type==='radio')?(el.checked?'1':'0'):el.value)}}catch(e){}}
+const usbMode=()=>$('#mode_usb').checked;
+function showMode(){$('#filesopts').classList.toggle('hidden',usbMode());$('#usbopts').classList.toggle('hidden',!usbMode());if(RESULTS.length)render()}
+document.querySelectorAll('input[name=mode]').forEach(r=>r.addEventListener('change',()=>{remember();showMode()}));
+$('#usb_format').addEventListener('change',remember);
+// songs already copied to the chosen folder (earlier runs) are hidden
+let CHECKT=null;
+async function checkCopied(){const dest=$('#dest').value.trim();const srcs=RESULTS.filter(r=>r.file).map(r=>r.file.path);
+ if(!srcs.length)return;const res=dest?await api('/api/copied',{dest,srcs}):{copied:[]};const got=new Set(res.copied);
+ RESULTS.forEach(r=>{const was=r.copied;r.copied=!!(r.file&&got.has(r.file.path));if(r.copied)r.checked=false;else if(was)r.checked=r.status==='found'||r.status==='guess'});render()}
+$('#dest').addEventListener('input',()=>{clearTimeout(CHECKT);CHECKT=setTimeout(checkCopied,500)});
+async function info(){const i=await api('/api/info');$('#root').textContent=i.root;
+ if(!i.ready){$('#libinfo').textContent=`(reading your library for the first time… ${i.progress.toLocaleString()} songs so far)`;$('#rescan').classList.add('hidden')}
+ else{$('#libinfo').textContent=`(${i.count.toLocaleString()} songs, checked ${i.scanned}${i.scanning?' · looking for new songs…':''})`;$('#rescan').classList.toggle('hidden',i.scanning)}
+ if(!$('#dest').value&&i.dest){$('#dest').value=i.dest}$('#dest').placeholder=i.example;
+ $('#noffmpeg').classList.toggle('hidden',!!i.ffmpeg);
+ if(!i.ffmpeg&&i.windows)$('#ffmpeghelp').innerHTML=i.ffmpeg_installing?'Installing ffmpeg… (about a minute)':
+   `<button id="getffmpeg">Install ffmpeg now</button> <span class="small">free, about a minute</span>`+(i.ffmpeg_log?`<br><span class="small">Last try: ${esc(i.ffmpeg_log)}</span>`:'');
+ const gf=$('#getffmpeg');if(gf)gf.onclick=async()=>{await api('/api/install_ffmpeg',{});info()};
+ if(i.ffmpeg_installing)setTimeout(info,2000);
+ $('#ver').textContent='songcopy '+i.version;if(!window.VER)window.VER=i.version;
+ if(i.scanning)setTimeout(info,1000)}
+info();
+$('#rescan').onclick=async e=>{e.preventDefault();await api('/api/rescan',{});await info();const wait=async()=>{const i=await api('/api/info');if(i.scanning)return setTimeout(wait,1000);info();if(window.LAST)match(window.LAST)};wait()};
+const drop=$('#drop');drop.onclick=()=>$('#file').click();
+drop.ondragover=e=>{e.preventDefault();drop.classList.add('over')};drop.ondragleave=()=>drop.classList.remove('over');
+drop.ondrop=e=>{e.preventDefault();drop.classList.remove('over');if(e.dataTransfer.files[0])loadFile(e.dataTransfer.files[0])};
+$('#file').onchange=e=>{if(e.target.files[0])loadFile(e.target.files[0]);e.target.value=''};
+$('#pastego').onclick=()=>{LISTNAME='pasted list';if(!$('#usb_name').value)$('#usb_name').value='My set';match({filename:'pasted.txt',text:$('#paste').value})};
+$('#prefer').onchange=()=>{remember();if(window.LAST)match(window.LAST)};
+function loadFile(f){LISTNAME=f.name.replace(/\.[^.]+$/,'');$('#usb_name').value=LISTNAME;const r=new FileReader();r.onload=()=>{const b=new Uint8Array(r.result);let s='';for(let i=0;i<b.length;i+=32768)s+=String.fromCharCode.apply(null,b.subarray(i,i+32768));match({filename:f.name,data:btoa(s)})};r.readAsArrayBuffer(f)}
+async function match(req){window.LAST=req;$('#loaderr').textContent='';drop.innerHTML='<strong>Looking for your songs…</strong>'+($('#libinfo').textContent.includes('first time')?'<br><span class="small">(waiting for the library to finish reading - only slow the very first time)</span>':'');
+ const res=await api('/api/match',{...req,prefer:$('#prefer').value});
+ drop.innerHTML=`<strong>${esc(LISTNAME)}</strong> loaded. Drop another file to replace it.`;
+ if(res.error){$('#loaderr').textContent=res.error;return}
+ RESULTS=res.results.map(r=>({...r,checked:r.status==='found'||r.status==='guess'}));FILTER=RESULTS.some(r=>r.status==='missing')?null:null;render();
+ $('#results').classList.remove('hidden');$('#copycard').classList.remove('hidden');$('#done').innerHTML='';$('#progress').classList.add('hidden');showMode();checkCopied()}
+function fileCell(r,i){
+ if(!r.file){let h=`<span class="tag missing">NOT FOUND</span>`;
+  if(r.suggestions.length){h+=`<div class="sugg"><span class="small">Did you mean:</span>`+r.suggestions.map((s,k)=>`<a data-i="${i}" data-s="${k}">${esc(s.rel)}</a>`).join('')+`</div>`}
+  h+=`<div class="sugg"><a data-search="${i}">Search the library myself…</a></div>`;return h}
+ const f=r.file;let h=`<span class="tag ${r.status}">${{found:'FOUND',guess:'BEST GUESS',version:'OTHER VERSION ONLY'}[r.status]}</span> <b>${esc(f.title)}</b> <span class="small">by ${esc(f.artist)}</span><span class="fmt">${esc(f.ext.toUpperCase())}</span>`
+ +` <button class="play" data-play="${esc(f.path)}" title="Listen">▶</button><div class="path">${esc(f.rel)}</div>`;
+ if(r.note)h+=`<div class="note">${esc(r.note)}</div>`;
+ if(r.alternatives.length){h+=`<div class="sugg"><select data-alt="${i}"><option value="">${r.alternatives.length} other version${r.alternatives.length>1?'s':''} in your library…</option>`+r.alternatives.map((a,k)=>`<option value="${k}">${esc(a.rel)}</option>`).join('')+`</select></div>`}
+ return h}
+function render(){
+ const c={found:0,guess:0,version:0,missing:0,copied:0};RESULTS.forEach(r=>r.copied?c.copied++:c[r.status]++);
+ $('#summary').innerHTML=(c.found||!c.copied?`<span class="pill ok ${FILTER==='found'?'active':''}" data-f="found">✓ ${c.found} ${c.copied?'new ':''}found</span>`:'')+
+  (c.guess?`<span class="pill warn ${FILTER==='guess'?'active':''}" data-f="guess">? ${c.guess} best guess</span>`:'')+
+  (c.version?`<span class="pill alt ${FILTER==='version'?'active':''}" data-f="version" title="You don't have the exact version asked for (e.g. Extended Mix). Not copied unless you tick it.">≠ ${c.version} other version only</span>`:'')+
+  (c.missing?`<span class="pill bad ${FILTER==='missing'?'active':''}" data-f="missing">✕ ${c.missing} not found</span>`:'')+
+  (c.copied?`<span class="pill ok ${FILTER==='copied'?'active':''}" data-f="copied" style="opacity:.75" title="Already copied to this folder on an earlier run. Click to see them (tick one to copy it again).">✓ ${c.copied} already copied</span>`:'')+
+  `<span class="small" style="align-self:center">of ${RESULTS.length} songs on your list</span>`;
+ $('#dlmissing').classList.toggle('hidden',!(c.missing||c.version));
+ $('#filterinfo').textContent=FILTER==='copied'?'These were already copied to this folder. Tick one to copy it again.':FILTER?'Showing only one group. Click it again to show all.':(c.missing?'Songs that weren\'t found are shown in red. Click a suggestion to use it instead.':'')+(c.copied?' Already-copied songs are hidden.':'');
+ const order={missing:0,guess:1,found:2};
+ const rows=RESULTS.map((r,i)=>[r,i]).filter(([r])=>FILTER==='copied'?r.copied:(!r.copied&&(!FILTER||r.status===FILTER)));
+ if(!rows.length&&!FILTER&&c.copied)$('#filterinfo').textContent='Everything found has already been copied to this folder. 🎉';
+ $('#tbody').innerHTML=rows.map(([r,i])=>`<tr class="${r.status}"><td><input type="checkbox" data-c="${i}" ${r.checked?'checked':''} ${r.file?'':'disabled'}></td><td class="small">${r.row??''}</td><td>${esc(r.label)}</td><td>${fileCell(r,i)}</td></tr>`).join('');
+ const sel=RESULTS.filter(r=>r.checked&&r.file);const bytes=sel.reduce((a,r)=>a+(r.file.size||0),0);
+ $('#go').textContent=`${usbMode()?'Make USB with':'Copy'} ${sel.length} song${sel.length===1?'':'s'}`;$('#go').disabled=!sel.length;$('#gohint').textContent=sel.length?kb(bytes):'';
+}
+$('#summary').onclick=e=>{const f=e.target.closest('[data-f]');if(!f)return;FILTER=FILTER===f.dataset.f?null:f.dataset.f;render()};
+$('#all').onchange=e=>{RESULTS.forEach(r=>{if(r.file&&(FILTER==='copied'?r.copied:(!r.copied&&(!FILTER||r.status===FILTER))))r.checked=e.target.checked});render()};
+$('#tbody').onchange=e=>{const t=e.target;
+ if(t.dataset.c!=null){RESULTS[t.dataset.c].checked=t.checked;render()}
+ if(t.dataset.alt!=null&&t.value!==''){const r=RESULTS[t.dataset.alt];const a=r.alternatives.splice(+t.value,1)[0];r.alternatives.unshift(r.file);r.file=a;r.status='found';r.note='';r.checked=true;render()}};
+$('#tbody').onclick=async e=>{const t=e.target;
+ if(t.dataset.play){const au=$('#audio');const src='/api/play?path='+encodeURIComponent(t.dataset.play);if(au.dataset.p===t.dataset.play&&!au.paused){au.pause();t.textContent='▶';return}
+  document.querySelectorAll('.play').forEach(b=>b.textContent='▶');au.src=src;au.dataset.p=t.dataset.play;au.play();t.textContent='❚❚';au.onended=()=>t.textContent='▶';return}
+ if(t.dataset.s!=null){const r=RESULTS[t.dataset.i];r.file=r.suggestions[t.dataset.s];r.alternatives=r.suggestions.filter((_,k)=>k!=t.dataset.s);r.status='found';r.note='you picked this';r.checked=true;render();return}
+ if(t.dataset.search!=null){const r=RESULTS[t.dataset.search];
+  const cell=t.closest('td');cell.insertAdjacentHTML('beforeend',`<div class="row" style="margin-top:6px"><input type="text" placeholder="type artist or song words" value="${esc(r.label)}"><button>Search</button></div><div class="sugg"></div>`);
+  t.remove();const inp=cell.querySelector('input[type=text]'),out=cell.querySelector('.sugg:last-child');
+  const go=async()=>{const res=await api('/api/search',{q:inp.value,prefer:$('#prefer').value});r.suggestions=res.files;
+   out.innerHTML=res.files.length?res.files.map((s,k)=>`<a data-i="${t.dataset.search}" data-s="${k}">${esc(s.rel)}</a>`).join(''):'<span class="small">Nothing found.</span>'};
+  cell.querySelector('button').onclick=go;inp.onkeydown=e=>{if(e.key==='Enter')go()};inp.focus();go()}};
+$('#dlmissing').onclick=()=>{const rows=[['Row','Song','Problem','What your library has instead']];RESULTS.filter(r=>r.status==='missing'||r.status==='version').forEach(r=>rows.push([r.row??'',r.label,r.status==='missing'?'not found':'only a different version',r.status==='missing'?(r.suggestions[0]?.rel||''):r.file.rel]));
+ const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv'}));a.download=LISTNAME+' - missing songs.csv';a.click()};
+// folder browser
+async function ls(p){const r=await api('/api/ls?path='+encodeURIComponent(p));const b=$('#browser');b.style.display='block';
+ b.innerHTML=(r.parent!=null?`<div data-p="${esc(r.parent)}">⬆ Up one level</div>`:'')+(r.path?`<div class="small" style="cursor:default">In <b>${esc(r.path)}</b> (${r.free} free) · click a folder to open it</div><div data-use="${esc(r.path)}" style="color:var(--acc)">✓ Copy into this folder</div>`:`<div class="small" style="cursor:default">This PC: pick a drive</div>`)+(r.error?`<div class="small" style="color:var(--bad)">${esc(r.error)}</div>`:'')+r.dirs.map(d=>`<div data-p="${esc(d.path)}">📁 ${esc(d.name)}</div>`).join('')}
+$('#browse').onclick=()=>{const b=$('#browser');if(b.style.display==='block'){b.style.display='none';return}ls($('#dest').value||'~')};
+$('#browser').onclick=e=>{const d=e.target.closest('div');if(!d)return;if(d.dataset.use){$('#dest').value=d.dataset.use;$('#browser').style.display='none';remember();checkCopied()}else if(d.dataset.p!=null){if(d.dataset.p)$('#dest').value=d.dataset.p;ls(d.dataset.p)}};
+['dest','folders','number','playlist'].forEach(k=>$('#'+k).addEventListener('change',remember));
+$('#go').onclick=async()=>{const dest=$('#dest').value.trim();if(!dest){$('#dest').focus();$('#gohint').textContent='Type or browse to a folder first.';return}
+ const items=RESULTS.map((r,i)=>[r,i+1]).filter(([r])=>r.checked&&r.file).sort((a,b)=>a[1]-b[1]).map(([r,n])=>({src:r.file.path,rel:r.file.rel,n}));
+ remember();$('#go').disabled=true;$('#done').innerHTML='';
+ const res=await api('/api/copy',{dest,items,folders:$('#folders').checked,number:$('#number').checked,playlist:!usbMode()&&$('#playlist').checked,
+  mode:usbMode()?'usb':'files',usb_format:$('#usb_format').value,usb_name:$('#usb_name').value});
+ if(res.error){$('#done').innerHTML=`<div class="banner bad">${esc(res.error)}</div>`;$('#go').disabled=false;return}
+ $('#progress').classList.remove('hidden');
+ const tick=async()=>{const j=await api('/api/job/'+res.job);$('#barfill').style.width=(100*j.n/Math.max(1,j.total))+'%';
+  $('#ptext').textContent=`${j.n} of ${j.total} songs${j.current?' · '+(usbMode()?'checking / converting ':'')+j.current:''}`;
+  if(!j.finished)return setTimeout(tick,400);
+  const miss=RESULTS.filter(r=>r.status==='missing'||(r.status==='version'&&!r.checked)).length;
+  const doneSet=new Set(j.done_srcs);RESULTS.forEach(r=>{if(r.file&&doneSet.has(r.file.path)){r.copied=true;r.checked=false}});FILTER=null;render();
+  let h=`<div class="banner ${j.errors.length?'bad':'ok'}"><b>Done.</b> ${j.copied+j.converted} copied to <b>${esc(j.dest)}</b>`+(j.converted?` (${j.converted} converted so the decks can play them)`:'')+(j.skipped?`, ${j.skipped} were already there (left alone)`:'')+'.'+(j.playlist?`<br>Playlist: ${esc(j.playlist)}`:'')+`<br><span class="small">Copied songs are now hidden from the list above.</span></div>`;
+  if(j.errors.length)h+=`<div class="banner bad"><b>${j.errors.length} couldn't be copied:</b><br>`+j.errors.map(e=>esc(e.src)+'<br><span class="small">'+esc(e.msg)+'</span>').join('<br>')+'</div>';
+  if(miss)h+=`<div class="banner bad">${miss} song${miss>1?'s were':' was'} not in your library (or only in a different version). Use the download button above to save the list.</div>`;
+  $('#done').innerHTML=h;$('#go').disabled=false};tick()};
+// ---- updates
+let UPD=null;
+async function upd(check){const u=await api('/api/update/status'+(check?'?check=1':''));UPD=u;
+ $('#updauto').checked=!!u.auto;
+ $('#updback').innerHTML=u.previous?` · <a href="#" id="updrollback">Go back to ${esc(u.previous)}</a>`:'';
+ const rb=$('#updrollback');if(rb)rb.onclick=e=>{e.preventDefault();install('/api/update/rollback','Going back to '+u.previous)};
+ $('#updstatus').textContent=u.checking?'Checking for updates…':u.error&&check?'Couldn\'t check: '+u.error:(check&&!u.available?'You have the newest version.':'');
+ let hide=false;try{hide=sessionStorage.getItem('sc_later')===u.latest}catch(e){}
+ if(u.available&&!hide){$('#updcard').classList.remove('hidden');$('#updtitle').textContent=`songcopy ${u.latest} is available (you have ${u.current})`;
+  $('#updnotes').textContent=u.notes||'';$('#updgo').disabled=!u.can_install;$('#updmsg').textContent=u.can_install?'':(u.why_not||'')}
+ else $('#updcard').classList.add('hidden');
+ if(u.checking)setTimeout(()=>upd(false),2000)}
+async function install(url,what){$('#updcard').classList.remove('hidden');$('#updgo').disabled=true;$('#updmsg').textContent=what+'… (downloading, then songcopy restarts)';
+ const r=await api(url,{});if(r.error){$('#updmsg').textContent='Update failed: '+r.error+' - you still have '+window.VER+'.';$('#updgo').disabled=false;return}
+ const start=Date.now();const wait=async()=>{try{const i=await api('/api/info');if(i.version!==window.VER){location.reload();return}}catch(e){}
+  if(Date.now()-start>60000){$('#updmsg').textContent='songcopy hasn\'t come back yet. Start it again; your files and settings are untouched.';return}setTimeout(wait,1000)};setTimeout(wait,1500)}
+$('#updgo').onclick=()=>install('/api/update/apply','Updating to '+(UPD&&UPD.latest));
+$('#updlater').onclick=()=>{try{sessionStorage.setItem('sc_later',UPD.latest)}catch(e){}$('#updcard').classList.add('hidden')};
+$('#updcheck').onclick=e=>{e.preventDefault();$('#updstatus').textContent='Checking for updates…';upd(true)};
+$('#updauto').onchange=e=>api('/api/update/settings',{auto:e.target.checked});
+upd(false);
+</script></body></html>
