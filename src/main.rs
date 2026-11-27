@@ -16,6 +16,7 @@ mod discover;
 mod library;
 mod lists;
 mod paths;
+mod rekordbox;
 mod server;
 mod slskd;
 #[cfg(test)]
@@ -51,6 +52,14 @@ enum Cmd {
     Copy(CopyArgs),
     /// check a list, copy nothing
     Find(FindArgs),
+    /// put back a rekordbox stick's library as it was before an export
+    /// (lists the stick's backups when no backup is named)
+    RestoreStick {
+        /// the stick (its top folder, e.g. E:\\ or /media/you/USB)
+        stick: String,
+        /// which backup, as listed
+        backup: Option<String>,
+    },
     /// install the newest version of dubplate
     Update {
         /// only say whether there's a newer version
@@ -123,7 +132,16 @@ struct CopyArgs {
     /// what --usb converts to: aiff (lossless) or mp3 (320k, smaller)
     #[arg(long, value_parser = ["aiff", "mp3"], default_value = "aiff")]
     usb_format: String,
-    /// playlist folder name for --usb (default: the list's file name)
+    /// make a rekordbox USB: DEST is the stick; the list becomes a playlist in the decks'
+    /// library browser, with beat grids, BPM, key and waveforms (no rekordbox needed).
+    /// The stick's library is backed up first.
+    #[arg(long, conflicts_with_all = ["usb", "folders", "number", "playlist"])]
+    rekordbox: bool,
+    /// what --rekordbox converts songs older decks can't play (FLAC, ALAC, Opus, ...) to;
+    /// none = copy them as they are (CDJ-2000NXS2 / CDJ-3000 and newer play FLAC)
+    #[arg(long, value_parser = ["aiff", "mp3", "wav", "none"], default_value = "aiff")]
+    convert: String,
+    /// playlist name for --usb / --rekordbox (default: the list's file name)
     #[arg(long)]
     name: Option<String>,
     /// also copy songs that were already copied to DEST on an earlier run
@@ -245,6 +263,34 @@ fn run(cli: Cli) -> i32 {
             0
         }
         Cmd::Update { check, rollback } => update_cmd(check, rollback),
+        Cmd::RestoreStick { stick, backup } => {
+            let stick = paths::abspath(&paths::expanduser(&stick));
+            let all = rekordbox::list_backups(&stick);
+            match backup {
+                None if all.is_empty() => {
+                    println!("No backups of {stick} yet (one is made before every rekordbox export to it).");
+                    0
+                }
+                None => {
+                    println!("Backups of {stick}, newest first:");
+                    for b in &all {
+                        println!("  {b}");
+                    }
+                    println!("Put one back with: dubplate restore-stick \"{stick}\" \"<backup>\"");
+                    0
+                }
+                Some(b) => match rekordbox::restore(&stick, &b) {
+                    Ok(()) => {
+                        println!("Put back the stick's library from {b} (what it held just now is backed up too).");
+                        0
+                    }
+                    Err(e) => {
+                        eprintln!("{e}");
+                        1
+                    }
+                },
+            }
+        }
         Cmd::MatchJson { prefer } => match_json(&resolve_music(cli.music), &prefer),
         Cmd::Find(a) => {
             let music = resolve_music(cli.music);
@@ -563,6 +609,69 @@ fn cli_run(music: &str, list: &str, prefer: &str, strict: bool, copy: Option<Cop
         .collect();
 
     let dest = paths::abspath(&paths::expanduser(&a.dest));
+    if a.rekordbox {
+        let stem = paths::splitext(paths::basename(list)).0.to_string();
+        let name = a.name.clone().unwrap_or(stem);
+        let songs: Vec<rekordbox::Song> = to_copy
+            .iter()
+            .filter_map(|r| {
+                r.file.as_ref().map(|f| rekordbox::Song {
+                    path: f.path.clone(),
+                    artist: f.artist.clone(),
+                    title: f.title.clone(),
+                    album: f.album.clone(),
+                })
+            })
+            .collect();
+        if songs.is_empty() {
+            println!("{}Nothing to put on the stick.{}", c.y, c.x);
+            return incomplete;
+        }
+        println!("\nMaking the rekordbox playlist {}{name}{} on {}{dest}{} ({} songs)", c.b, c.x, c.b, c.x, songs.len());
+        if a.dry_run {
+            println!("{}(dry run: nothing was written){}", c.d, c.x);
+            return incomplete;
+        }
+        let on = c.on;
+        let r = rekordbox::export_set(&dest, &name, &songs, rekordbox::parse_convert(&a.convert), &|p| {
+            if on {
+                print!("\r  {:<10} {}/{}  {:<50}", p.stage, p.done, p.total, p.current.chars().take(50).collect::<String>());
+                let _ = std::io::stdout().flush();
+            }
+        });
+        if c.on {
+            print!("\r{}\r", " ".repeat(80));
+        }
+        return match r {
+            Ok(r) => {
+                println!(
+                    "{}{}Done: {} songs in the playlist {}{}{} ({} copied, {} already on the stick, {} converted){}",
+                    c.g, c.b, r.tracks, r.playlist, c.x, c.g, r.copied, r.reused, r.converted, c.x
+                );
+                if let Some(b) = &r.backup {
+                    println!("{}The stick's library from before is backed up ({b}); `dubplate restore-stick` puts it back.{}", c.d, c.x);
+                }
+                if !r.verified {
+                    println!("{}The stick couldn't be checked after writing.{}", c.y, c.x);
+                }
+                for w in &r.warnings {
+                    println!("{}  {w}{}", c.y, c.x);
+                }
+                if !r.errors.is_empty() {
+                    println!("{}{}{} left out:{}", c.r, c.b, r.errors.len(), c.x);
+                    for (p, e) in &r.errors {
+                        println!("  {}{} {e}{}", c.r, paths::basename(p), c.x);
+                    }
+                    return 1;
+                }
+                incomplete
+            }
+            Err(e) => {
+                eprintln!("{}{e}{}", c.r, c.x);
+                1
+            }
+        };
+    }
     let usb_format = a.usb.then(|| a.usb_format.clone());
     // a USB stick remembers per playlist folder; a folder remembers itself
     let usb_target = usb_format.as_ref().map(|_| {

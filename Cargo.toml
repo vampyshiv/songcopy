@@ -26,6 +26,15 @@ unicode-general-category = "1.1"
 unicode-normalization = "0.1"
 ureq = { version = "2.12", features = ["json"] }
 
+# rekordbox USB engine from rbxport (GPL-2.0-or-later, https://github.com/chrisle/rbxport),
+# pinned to a release. Analysis, ANLZ files, export.pdb / exportLibrary.db, audio conversion.
+rbl-analysis = { git = "https://github.com/chrisle/rbxport", tag = "v1.10.0" }
+rbl-anlz = { git = "https://github.com/chrisle/rbxport", tag = "v1.10.0" }
+rbl-audio = { git = "https://github.com/chrisle/rbxport", tag = "v1.10.0" }
+rbl-core = { git = "https://github.com/chrisle/rbxport", tag = "v1.10.0" }
+rbl-export = { git = "https://github.com/chrisle/rbxport", tag = "v1.10.0" }
+lofty = "0.25"
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 

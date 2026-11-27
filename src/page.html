@@ -62,8 +62,8 @@ td select{width:100%}
 .banner{border-radius:10px;padding:12px 14px;margin-top:12px}
 .banner.ok{background:var(--ok-bg);color:var(--ok)}.banner.bad{background:var(--bad-bg);color:var(--bad)}
 .hidden{display:none!important}
-.tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:4px 0 16px}
-@media (max-width:640px){.tabs{grid-template-columns:1fr}}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:4px 0 16px}
+@media (max-width:760px){.tabs{grid-template-columns:1fr}}
 .tab{text-align:left;padding:12px 14px;border:2px solid var(--line);border-radius:12px;background:var(--bg);display:flex;flex-direction:column;gap:3px}
 .tab b{font-size:15.5px}.tab span{font-size:13px;color:var(--mute)}
 .tab.active{border-color:var(--acc);background:var(--card);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 18%,transparent)}
@@ -199,7 +199,9 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
     <button type="button" class="tab" role="tab" id="tab_files" data-mode="files"><b>📁 Copy to a folder</b>
       <span>For your DJ software (e.g. Traktor's music folder) or any folder. Files are copied exactly as they are.</span></button>
     <button type="button" class="tab" role="tab" id="tab_usb" data-mode="usb"><b>💾 Make a USB for the decks</b>
-      <span>A stick for CDJs/XDJs: one numbered playlist folder, and anything older decks can't play is converted.</span></button>
+      <span>A plain stick for CDJs/XDJs: one numbered playlist folder, and anything older decks can't play is converted.</span></button>
+    <button type="button" class="tab" role="tab" id="tab_rb" data-mode="rb"><b>🎛 Rekordbox USB</b>
+      <span>A stick the decks read like one made in rekordbox: a playlist in the library browser, with BPM, key, beat grids and waveforms.</span></button>
   </div>
   <label class="fieldlabel" for="dest"><span id="destlabel">Folder to copy into</span><button type="button" class="tip" id="desttip">?</button></label>
   <div class="row"><input type="text" id="dest" spellcheck="false">
@@ -218,6 +220,13 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
     <p class="small" style="margin:8px 0 0">On the deck, browse the stick with its <b>folder</b> view. Use a stick formatted as <b>FAT32</b>, the one format every Pioneer deck reads.
     <span id="noffmpeg" class="hidden" style="color:var(--bad)"><br>ffmpeg isn't installed on this computer, so songs that need converting can't be copied (MP3, WAV and AIFF still are). <span id="ffmpeghelp">Install ffmpeg, then restart dubplate.</span></span></p>
   </div>
+  <div id="rbopts" class="hidden">
+    <div class="opts"><label>Playlist name <input type="text" id="rb_name" style="min-width:12em" spellcheck="false"></label><button type="button" class="tip" data-tip="The playlist the decks show under PLAYLIST in the stick's library browser. Sending a set with the same name again replaces that playlist; a new name adds one next to the others. Playlists already on the stick, including ones made on a deck, stay.">?</button>
+      <label>Songs older decks can't play become
+      <select id="rb_convert"><option value="aiff">AIFF (lossless)</option><option value="mp3">MP3 320 kbps (smaller)</option><option value="wav">WAV (lossless, no tags)</option><option value="none">Leave them as they are</option></select></label><button type="button" class="tip" data-tip="Older decks (CDJ-900/2000, CDJ-2000NXS, XDJ-1000, XDJ-RX…) can't play FLAC, ALAC, Ogg/Opus or hi-res files, so those are converted for the stick - your library's files are never changed. CDJ-2000NXS2, CDJ-3000 and newer play FLAC: pick “Leave them as they are” for those. No ffmpeg needed.">?</button></div>
+    <p class="small" style="margin:8px 0 0">Each song is analysed once (tempo, beat grid, key, waveforms, a few seconds a song) and remembered, so the next stick is quick. Before anything is written, the stick's library is <b>backed up</b>. Use a <b>FAT32</b> (or exFAT for newer decks) stick. Made with <a href="https://github.com/chrisle/rbxport" target="_blank" rel="noopener">rbxport</a>'s engine.</p>
+    <div id="rbbackups" class="small" style="margin-top:8px"></div>
+  </div>
   <div class="row" style="margin-top:14px"><button class="primary" id="go">Copy songs</button><span class="small" id="gohint"></span></div>
   <div id="progress" class="hidden"><div class="bar"><i id="barfill"></i></div><div class="small" id="ptext"></div></div>
   <div id="done"></div>
@@ -235,49 +244,66 @@ let RESULTS=[], FILTER=null, LISTNAME='list';
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const kb=n=>n>1e9?(n/1073741824).toFixed(1)+' GB':(n/1048576).toFixed(1)+' MB';
 async function api(p,body){const r=await fetch(p,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});return r.json()}
-const KEEP=['prefer','folders','number','playlist','usb_format'];
+const KEEP=['prefer','folders','number','playlist','usb_format','rb_convert'];
 const store={get:k=>{try{return localStorage.getItem('sc_'+k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem('sc_'+k,v)}catch(e){}}};
 for(const k of KEEP){const v=store.get(k);if(v==null)continue;const el=$('#'+k);el.type==='checkbox'?el.checked=v==='1':el.value=v}
 // each kind of destination remembers its own folder (older versions kept one shared "dest")
 let MODE=store.get('mode')||(store.get('mode_usb')==='1'?'usb':'files');
 // (an old shared "dest" goes to the tab that was in use)
 const OLDUSB=store.get('mode_usb')==='1',OLD=store.get('dest')??'';
-const DEST={files:store.get('dest_files')??(OLDUSB?'':OLD),usb:store.get('dest_usb')??(OLDUSB?OLD:'')};
+const DEST={files:store.get('dest_files')??(OLDUSB?'':OLD),usb:store.get('dest_usb')??(OLDUSB?OLD:''),rb:store.get('dest_rb')??''};
 function remember(){for(const k of KEEP){const el=$('#'+k);store.set(k,el.type==='checkbox'?(el.checked?'1':'0'):el.value)}
- store.set('dest_files',DEST.files);store.set('dest_usb',DEST.usb);store.set('mode',MODE)}
-const usbMode=()=>MODE==='usb';
+ store.set('dest_files',DEST.files);store.set('dest_usb',DEST.usb);store.set('dest_rb',DEST.rb);store.set('mode',MODE)}
+if(!['files','usb','rb'].includes(MODE))MODE='files';
+const usbMode=()=>MODE==='usb',rbMode=()=>MODE==='rb',stickMode=()=>MODE!=='files';
 const PLACE=()=>usbMode()?'this stick':'this folder';
 const TIP_DEST={files:'The folder the songs are copied into, e.g. the music folder Traktor (or your DJ software) watches. Click Browse… to pick it. dubplate remembers it.',
- usb:'Your USB stick, or a folder on it. dubplate makes the playlist folder (below) inside it. Pick the stick itself to keep every set side by side.'};
+ usb:'Your USB stick, or a folder on it. dubplate makes the playlist folder (below) inside it. Pick the stick itself to keep every set side by side.',
+ rb:'Your USB stick itself (its top folder, e.g. E:\\ on Windows or /media/you/USB on Linux), not a folder on it: the decks look for the library at the top of the stick.'};
 function showMode(){
- $('#tab_files').classList.toggle('active',!usbMode());$('#tab_usb').classList.toggle('active',usbMode());
- $('#tab_files').setAttribute('aria-selected',!usbMode());$('#tab_usb').setAttribute('aria-selected',usbMode());
- $('#filesopts').classList.toggle('hidden',usbMode());$('#usbopts').classList.toggle('hidden',!usbMode());
- $('#destlabel').textContent=usbMode()?'USB stick (or a folder on it)':'Folder to copy into';
+ for(const m of ['files','usb','rb']){$('#tab_'+m).classList.toggle('active',MODE===m);$('#tab_'+m).setAttribute('aria-selected',MODE===m)}
+ $('#filesopts').classList.toggle('hidden',MODE!=='files');$('#usbopts').classList.toggle('hidden',!usbMode());$('#rbopts').classList.toggle('hidden',!rbMode());
+ $('#destlabel').textContent=rbMode()?'USB stick':usbMode()?'USB stick (or a folder on it)':'Folder to copy into';
  $('#desttip').dataset.tip=TIP_DEST[MODE];
- $('#dest').value=DEST[MODE];$('#dest').placeholder=usbMode()?(window.INFO&&INFO.windows?'E:\\':'/media/you/USB'):(window.INFO?INFO.example:'');
- $('#memnote').textContent=usbMode()
+ $('#dest').value=DEST[MODE];$('#dest').placeholder=stickMode()?(window.INFO&&INFO.windows?'E:\\':'/media/you/USB'):(window.INFO?INFO.example:'');
+ $('#memnote').textContent=rbMode()
+  ?'Every ticked song goes into the playlist. Songs already on the stick (from earlier sets) aren\'t copied again.'
+  :usbMode()
   ?'Songs already on this stick are hidden. The stick has its own memory, so songs you copied to your DJ folder still go on it.'
   :'Songs already copied to this folder are hidden, so after you add missing songs to your library you can load the same list again and only the new ones are copied. The USB tab keeps its own memory.';
+ if(rbMode())rbBackups();
  $('#browser').style.display='none';if(RESULTS.length){render();checkCopied()}}
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{if(MODE===t.dataset.mode)return;MODE=t.dataset.mode;showMode();remember()}));
-$('#usb_format').addEventListener('change',remember);
+$('#usb_format').addEventListener('change',remember);$('#rb_convert').addEventListener('change',remember);
+// a rekordbox stick's backups (made before every export), with a way to put one back
+let RBT=null;
+async function rbBackups(){const stick=$('#dest').value.trim(),el=$('#rbbackups');if(!stick){el.innerHTML='';return}
+ let r;try{r=await api('/api/stick/backups?stick='+encodeURIComponent(stick))}catch(e){return}
+ if(!rbMode()||$('#dest').value.trim()!==stick)return;
+ el.innerHTML=r.backups.length?`Backups of this stick's library <button type="button" class="tip" data-tip="Made automatically before every rekordbox export to this stick (the newest 10 are kept, in dubplate's folder on this computer). Restore puts the stick's playlists and library back as they were then; what it holds now is backed up first. The music files on the stick aren't touched.">?</button>: <select id="rbpick">${r.backups.map(b=>`<option>${esc(b)}</option>`).join('')}</select> <button type="button" id="rbrestore">Restore…</button> <span id="rbrmsg"></span>`
+  :(r.rekordbox?'This stick already has a rekordbox library: it is backed up before dubplate adds to it.':'');
+ const b=$('#rbrestore');if(!b)return;
+ b.onclick=async()=>{if(b.dataset.sure!=='1'){b.dataset.sure='1';b.textContent='Yes, put it back';$('#rbrmsg').textContent=' The stick\'s playlists go back to how they were at '+$('#rbpick').value+'.';return}
+  b.disabled=true;const x=await api('/api/stick/restore',{stick,backup:$('#rbpick').value});
+  $('#rbrmsg').innerHTML=x.error?`<span style="color:var(--bad)">${esc(x.error)}</span>`:' <span style="color:var(--good)">✓ Restored.</span>';
+  if(!x.error)setTimeout(rbBackups,1500);else b.disabled=false}}
 // songs already copied to the chosen folder (earlier runs) are hidden
 let CHECKT=null,CHECKN=0;
-async function checkCopied(){const dest=$('#dest').value.trim();const srcs=RESULTS.filter(r=>r.file).map(r=>r.file.path);
+async function checkCopied(){if(rbMode()){CHECKN++;RESULTS.forEach(r=>{if(r.copied){r.copied=false;r.checked=r.status==='found'||r.status==='guess'}});render();return} // a rekordbox playlist holds every ticked song
+ const dest=$('#dest').value.trim();const srcs=RESULTS.filter(r=>r.file).map(r=>r.file.path);
  if(!srcs.length)return;const my=++CHECKN;
  const res=dest?await api('/api/copied',{dest,srcs,mode:MODE,usb_name:$('#usb_name').value}):{copied:[]};
  if(my!==CHECKN)return; // the tab or folder changed meanwhile: a newer check is on its way
  const got=new Set(res.copied);
  RESULTS.forEach(r=>{const was=r.copied;r.copied=!!(r.file&&got.has(r.file.path));if(r.copied)r.checked=false;else if(was)r.checked=r.status==='found'||r.status==='guess'});render()}
-$('#dest').addEventListener('input',()=>{clearTimeout(CHECKT);CHECKT=setTimeout(checkCopied,500)});
+$('#dest').addEventListener('input',()=>{clearTimeout(CHECKT);CHECKT=setTimeout(checkCopied,500);clearTimeout(RBT);if(rbMode())RBT=setTimeout(rbBackups,500)});
 $('#usb_name').addEventListener('input',()=>{clearTimeout(CHECKT);CHECKT=setTimeout(checkCopied,500)}); // a stick remembers per playlist folder
 async function info(){const i=await api('/api/info');$('#root').textContent=i.root;
  if(!i.ready){$('#libinfo').textContent=`(reading your library for the first time… ${i.progress.toLocaleString()} songs so far)`;$('#rescan').classList.add('hidden')}
  else{$('#libinfo').textContent=`(${i.count.toLocaleString()} songs, checked ${i.scanned}${i.scanning?' · looking for new songs…':''})`;$('#rescan').classList.toggle('hidden',i.scanning)}
- window.INFO=i;if(!DEST.files&&i.dest){DEST.files=i.dest;if(!usbMode())$('#dest').value=i.dest}if(!usbMode())$('#dest').placeholder=i.example;
+ window.INFO=i;if(!DEST.files&&i.dest){DEST.files=i.dest;if(MODE==='files')$('#dest').value=i.dest}if(MODE==='files')$('#dest').placeholder=i.example;
  if(i.appdir)$('#appdir').textContent=i.appdir;
- if(usbMode()&&!$('#dest').value)$('#dest').placeholder=i.windows?'E:\\':'/media/you/USB';
+ if(stickMode()&&!$('#dest').value)$('#dest').placeholder=i.windows?'E:\\':'/media/you/USB';
  $('#noffmpeg').classList.toggle('hidden',!!i.ffmpeg);
  if(!i.ffmpeg&&i.windows)$('#ffmpeghelp').innerHTML=i.ffmpeg_installing?'Installing ffmpeg… (about a minute)':
    `<button id="getffmpeg">Install ffmpeg now</button> <span class="small">free, about a minute</span>`+(i.ffmpeg_log?`<br><span class="small">Last try: ${esc(i.ffmpeg_log)}</span>`:'');
@@ -291,9 +317,9 @@ const drop=$('#drop');drop.onclick=()=>$('#file').click();
 drop.ondragover=e=>{e.preventDefault();drop.classList.add('over')};drop.ondragleave=()=>drop.classList.remove('over');
 drop.ondrop=e=>{e.preventDefault();drop.classList.remove('over');if(e.dataTransfer.files[0])loadFile(e.dataTransfer.files[0])};
 $('#file').onchange=e=>{if(e.target.files[0])loadFile(e.target.files[0]);e.target.value=''};
-$('#pastego').onclick=()=>{LISTNAME='pasted list';if(!$('#usb_name').value)$('#usb_name').value='My set';match({filename:'pasted.txt',text:$('#paste').value})};
+$('#pastego').onclick=()=>{LISTNAME='pasted list';if(!$('#usb_name').value)$('#usb_name').value='My set';if(!$('#rb_name').value)$('#rb_name').value='My set';match({filename:'pasted.txt',text:$('#paste').value})};
 $('#prefer').onchange=()=>{remember();if(window.LAST)match(window.LAST)};
-function loadFile(f){LISTNAME=f.name.replace(/\.[^.]+$/,'');$('#usb_name').value=LISTNAME;const r=new FileReader();r.onload=()=>{const b=new Uint8Array(r.result);let s='';for(let i=0;i<b.length;i+=32768)s+=String.fromCharCode.apply(null,b.subarray(i,i+32768));match({filename:f.name,data:btoa(s)})};r.readAsArrayBuffer(f)}
+function loadFile(f){LISTNAME=f.name.replace(/\.[^.]+$/,'');$('#usb_name').value=LISTNAME;$('#rb_name').value=LISTNAME;const r=new FileReader();r.onload=()=>{const b=new Uint8Array(r.result);let s='';for(let i=0;i<b.length;i+=32768)s+=String.fromCharCode.apply(null,b.subarray(i,i+32768));match({filename:f.name,data:btoa(s)})};r.readAsArrayBuffer(f)}
 async function match(req,keep){window.LAST=req;$('#loaderr').textContent='';drop.innerHTML='<strong>Looking for your songs…</strong>'+($('#libinfo').textContent.includes('first time')?'<br><span class="small">(waiting for the library to finish reading - only slow the very first time)</span>':'');
  const res=await api('/api/match',{...req,prefer:$('#prefer').value});
  drop.innerHTML=`<strong>${esc(LISTNAME)}</strong> loaded. Drop another file to replace it.`;
@@ -325,7 +351,7 @@ function render(){
  if(!rows.length&&!FILTER&&c.copied)$('#filterinfo').textContent=`Everything found has already been copied to ${PLACE()}. 🎉`;
  $('#tbody').innerHTML=rows.map(([r,i])=>`<tr class="${r.status}"><td><input type="checkbox" data-c="${i}" ${r.checked?'checked':''} ${r.file?'':'disabled'}></td><td class="small">${r.row??''}</td><td>${esc(r.label)}</td><td>${fileCell(r,i)}</td></tr>`).join('');
  const sel=RESULTS.filter(r=>r.checked&&r.file);const bytes=sel.reduce((a,r)=>a+(r.file.size||0),0);
- $('#go').textContent=`${usbMode()?'Make USB with':'Copy'} ${sel.length} song${sel.length===1?'':'s'}`;$('#go').disabled=!sel.length;$('#gohint').textContent=sel.length?kb(bytes):'';
+ $('#go').textContent=`${rbMode()?'Make the rekordbox playlist with':usbMode()?'Make USB with':'Copy'} ${sel.length} song${sel.length===1?'':'s'}`;$('#go').disabled=!sel.length;$('#gohint').textContent=sel.length?kb(bytes):'';
 }
 $('#summary').onclick=e=>{const f=e.target.closest('[data-f]');if(!f)return;FILTER=FILTER===f.dataset.f?null:f.dataset.f;render()};
 $('#all').onchange=e=>{RESULTS.forEach(r=>{if(r.file&&(FILTER==='copied'?r.copied:(!r.copied&&(!FILTER||r.status===FILTER))))r.checked=e.target.checked});render()};
@@ -353,14 +379,16 @@ $('#dlmissing').onclick=()=>{const rows=[['Row','Song','Problem','What your libr
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv'}));a.download=LISTNAME+' - missing songs.csv';a.click()};
 // folder browser
 async function ls(p){const r=await api('/api/ls?path='+encodeURIComponent(p));const b=$('#browser');b.style.display='block';
- b.innerHTML=(r.parent!=null?`<div data-p="${esc(r.parent)}">⬆ Up one level</div>`:'')+(r.path?`<div class="small" style="cursor:default">In <b>${esc(r.path)}</b> (${r.free} free) · click a folder to open it</div><div data-use="${esc(r.path)}" style="color:var(--acc)">✓ Copy into this folder</div>`:`<div class="small" style="cursor:default">This PC: pick a drive</div>`)+(r.error?`<div class="small" style="color:var(--bad)">${esc(r.error)}</div>`:'')+r.dirs.map(d=>`<div data-p="${esc(d.path)}">📁 ${esc(d.name)}</div>`).join('')}
+ b.innerHTML=(r.parent!=null?`<div data-p="${esc(r.parent)}">⬆ Up one level</div>`:'')+(r.path?`<div class="small" style="cursor:default">In <b>${esc(r.path)}</b> (${r.free} free) · click a folder to open it</div><div data-use="${esc(r.path)}" style="color:var(--acc)">✓ ${rbMode()?'Use this stick':'Copy into this folder'}</div>`:`<div class="small" style="cursor:default">This PC: pick a drive</div>`)+(r.error?`<div class="small" style="color:var(--bad)">${esc(r.error)}</div>`:'')+r.dirs.map(d=>`<div data-p="${esc(d.path)}">📁 ${esc(d.name)}</div>`).join('')}
 $('#browse').onclick=()=>{const b=$('#browser');if(b.style.display==='block'){b.style.display='none';return}ls($('#dest').value||'~')};
 $('#browser').onclick=e=>{const d=e.target.closest('div');if(!d)return;if(d.dataset.use){$('#dest').value=DEST[MODE]=d.dataset.use;$('#browser').style.display='none';remember();checkCopied()}else if(d.dataset.p!=null){if(d.dataset.p)$('#dest').value=DEST[MODE]=d.dataset.p;ls(d.dataset.p)}};
 ['dest','folders','number','playlist'].forEach(k=>$('#'+k).addEventListener('change',remember));
 // the box belongs to the tab that's open: only typing / browsing changes that tab's folder
 $('#dest').addEventListener('input',()=>{DEST[MODE]=$('#dest').value});
 $('#dest').addEventListener('change',()=>{DEST[MODE]=$('#dest').value;remember()});
-$('#go').onclick=async()=>{const dest=$('#dest').value.trim();if(!dest){$('#dest').focus();$('#gohint').textContent=usbMode()?'Pick your USB stick first.':'Type or browse to a folder first.';return}
+$('#go').onclick=async()=>{const dest=$('#dest').value.trim();if(!dest){$('#dest').focus();$('#gohint').textContent=stickMode()?'Pick your USB stick first.':'Type or browse to a folder first.';return}
+ $('#gohint').textContent='';
+ if(rbMode())return makeRekordbox(dest);
  const jobMode=MODE;
  const items=RESULTS.map((r,i)=>[r,i+1]).filter(([r])=>r.checked&&r.file).sort((a,b)=>a[1]-b[1]).map(([r,n])=>({src:r.file.path,rel:r.file.rel,n}));
  remember();$('#go').disabled=true;$('#done').innerHTML='';
@@ -377,6 +405,31 @@ $('#go').onclick=async()=>{const dest=$('#dest').value.trim();if(!dest){$('#dest
   if(j.errors.length)h+=`<div class="banner bad"><b>${j.errors.length} couldn't be copied:</b><br>`+j.errors.map(e=>esc(e.src)+'<br><span class="small">'+esc(e.msg)+'</span>').join('<br>')+'</div>';
   if(miss)h+=`<div class="banner bad">${miss} song${miss>1?'s were':' was'} not in your library (or only in a different version). Use the download button above to save the list.</div>`;
   $('#done').innerHTML=h;$('#go').disabled=false};tick()};
+const STAGES={starting:'Starting',analysing:'Analysing songs (tempo, key, waveforms)',checking:'Checking the stick',copying:'Copying / converting songs',database:'Writing the stick\'s library',verifying:'Checking what was written',publishing:'Finishing',done:'Done'};
+async function makeRekordbox(stick){
+ const name=$('#rb_name').value.trim()||LISTNAME;$('#rb_name').value=name;
+ const items=RESULTS.map((r,i)=>[r,i+1]).filter(([r])=>r.checked&&r.file).sort((a,b)=>a[1]-b[1]).map(([r])=>({src:r.file.path,rel:r.file.rel}));
+ if(!items.length){$('#gohint').textContent='Tick some songs first.';return}
+ remember();$('#go').disabled=true;$('#done').innerHTML='';
+ let res;try{res=await api('/api/rekordbox',{stick,name,convert:$('#rb_convert').value,items})}catch(e){res={error:'dubplate didn\'t answer.'}}
+ if(res.error){$('#done').innerHTML=`<div class="banner bad">${esc(res.error)}</div>`;$('#go').disabled=false;return}
+ $('#progress').classList.remove('hidden');
+ const tick=async()=>{let j;try{j=await api('/api/rbjob/'+res.job)}catch(e){return setTimeout(tick,1000)}
+  if(j.error==='not found'){$('#done').innerHTML='<div class="banner bad">Lost track of the export (was dubplate restarted?).</div>';$('#go').disabled=false;return}
+  const p=j.progress||{};$('#barfill').style.width=(100*(p.done||0)/Math.max(1,p.total||1))+'%';
+  $('#ptext').textContent=`${STAGES[p.stage]||p.stage}${p.total?` · ${p.done} of ${p.total}`:''}${p.current?' · '+p.current:''}`;
+  if(!j.finished)return setTimeout(tick,500);
+  $('#go').disabled=false;rbBackups();
+  if(j.error){$('#done').innerHTML=`<div class="banner bad">${esc(j.error)}</div>`;return}
+  const r=j.report;
+  let h=`<div class="banner ${r.errors.length?'bad':'ok'}"><b>Done.</b> The playlist <b>${esc(r.playlist)}</b> on <b>${esc(stick)}</b> has ${r.tracks} song${r.tracks===1?'':'s'}`+
+   ` (${r.copied} copied${r.converted?`, ${r.converted} of them converted for older decks`:''}${r.reused?`, ${r.reused} already on the stick`:''}).`+
+   (r.verified?'':'<br><span class="small">The stick couldn\'t be checked after writing - try it on a deck before the gig.</span>')+
+   (r.backup?`<br><span class="small">The stick's library from before is backed up (${esc(r.backup)}); you can restore it below.</span>`:'')+
+   `<br><span class="small">On the deck: plug the stick in, choose it as the source, and find the set under <b>PLAYLIST</b>. Eject it properly before unplugging.</span></div>`;
+  if(r.warnings.length)h+=`<div class="banner">${r.warnings.map(esc).join('<br>')}</div>`;
+  if(r.errors.length)h+=`<div class="banner bad"><b>${r.errors.length} left out:</b><br>`+r.errors.map(([p,e])=>(p?esc(p)+'<br>':'')+'<span class="small">'+esc(e)+'</span>').join('<br>')+'</div>';
+  $('#done').innerHTML=h};tick()}
 // ---- Soulseek (through the user's slskd)
 // SOUL: per row of the current list -> {job, state, cands, pick, want, error, failed}
 // DOWNS: every download dubplate asked slskd for (kept across lists and re-matches) -> watched

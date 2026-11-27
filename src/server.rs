@@ -5,6 +5,7 @@ use crate::discover;
 use crate::library::Library;
 use crate::lists;
 use crate::paths::{self, human, is_audio, join, nearest_existing, WINDOWS};
+use crate::rekordbox;
 use crate::slskd;
 use crate::update;
 use serde::Serialize;
@@ -46,6 +47,18 @@ struct Job {
 }
 
 static JOBS: LazyLock<Mutex<HashMap<String, Job>>> = LazyLock::new(Default::default);
+
+/// a rekordbox stick being made
+#[derive(Serialize, Default, Clone)]
+struct RbJob {
+    progress: rekordbox::Progress,
+    finished: bool,
+    error: Option<String>,
+    report: Option<rekordbox::Report>,
+}
+static RB_JOBS: LazyLock<Mutex<HashMap<String, RbJob>>> = LazyLock::new(Default::default);
+/// one rekordbox export at a time: they're heavy, and two on one stick would fight
+static RB_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static FFMPEG_INSTALL: LazyLock<Mutex<(bool, String)>> = LazyLock::new(Default::default);
 
 struct Ctx {
@@ -427,6 +440,17 @@ fn get(ctx: &Ctx, path: &str, q: &HashMap<String, String>) -> Value {
         "/api/update/status" => {
             serde_json::to_value(update::status(q.contains_key("check"))).unwrap_or(json!({}))
         }
+        p if p.starts_with("/api/rbjob/") => {
+            let id = &p["/api/rbjob/".len()..];
+            match RB_JOBS.lock().unwrap().get(id) {
+                Some(j) => serde_json::to_value(j).unwrap(),
+                None => json!({"error": "not found"}),
+            }
+        }
+        "/api/stick/backups" => {
+            let stick = paths::abspath(&paths::expanduser(q.get("stick").map(String::as_str).unwrap_or("").trim()));
+            json!({"backups": rekordbox::list_backups(&stick), "rekordbox": paths::isdir(&paths::join(&paths::join(&stick, "PIONEER"), "rekordbox"))})
+        }
         p if p.starts_with("/api/job/") => {
             let id = &p["/api/job/".len()..];
             match JOBS.lock().unwrap().get(id) {
@@ -769,6 +793,20 @@ fn post(ctx: &Ctx, path: &str, b: &Value) -> (Value, bool) {
             json!({"files": lib.view().search(s(b, "q"), prefer)})
         }
         "/api/copy" => start_copy(ctx, b),
+        "/api/rekordbox" => start_rekordbox(ctx, b),
+        "/api/stick/restore" => {
+            let stick = paths::abspath(&paths::expanduser(s(b, "stick").trim()));
+            if RB_BUSY.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                json!({"error": "A rekordbox stick is being written; wait for it to finish."})
+            } else {
+                let r = rekordbox::restore(&stick, s(b, "backup"));
+                RB_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+                match r {
+                    Ok(()) => json!({"ok": true}),
+                    Err(e) => json!({"error": e}),
+                }
+            }
+        }
         "/api/copied" => {
             let srcs: Vec<String> = b
                 .get("srcs")
@@ -1229,6 +1267,89 @@ fn start_copy(ctx: &Ctx, b: &Value) -> Value {
         }
     });
     json!({"job": id, "count": count, "size": human(total)})
+}
+
+fn start_rekordbox(ctx: &Ctx, b: &Value) -> Value {
+    let stick_raw = s(b, "stick").trim();
+    if stick_raw.is_empty() {
+        return json!({"error": "Pick your USB stick first."});
+    }
+    let stick = paths::abspath(&paths::expanduser(stick_raw));
+    if !paths::isdir(&stick) {
+        return json!({"error": format!("{stick} isn't there (is the stick plugged in?)")});
+    }
+    let name = s(b, "name").trim().to_string();
+    if name.is_empty() {
+        return json!({"error": "Give the playlist a name."});
+    }
+    let convert = match s(b, "convert") {
+        "" | "aiff" => rekordbox::parse_convert("aiff"),
+        "none" => None,
+        c @ ("mp3" | "wav") => rekordbox::parse_convert(c),
+        _ => return json!({"error": "Unknown format."}),
+    };
+    let songs: Vec<rekordbox::Song> = b
+        .get("items")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|it| {
+                    let src = it.get("src")?.as_str()?.to_string();
+                    let ok = paths::isfile(&src) && (ctx.local_only || in_library(ctx, &src));
+                    if !ok {
+                        return None;
+                    }
+                    let rel = it.get("rel").and_then(Value::as_str).unwrap_or_else(|| paths::basename(&src)).to_string();
+                    // dubplate's reading of the file name, for songs without tags
+                    let t = crate::library::parse_track(src.clone(), rel, 0);
+                    Some(rekordbox::Song { path: src, artist: t.artist, title: t.title, album: t.album })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if songs.is_empty() {
+        return json!({"error": "Nothing selected to put on the stick."});
+    }
+    if RB_BUSY.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return json!({"error": "A rekordbox stick is already being made; wait for it to finish."});
+    }
+    let id = format!(
+        "rb{:x}",
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() & 0xff_ffff_ffff
+    );
+    {
+        let mut jobs = RB_JOBS.lock().unwrap();
+        jobs.retain(|_, j| !j.finished); // finished jobs were read by now
+        jobs.insert(id.clone(), RbJob { progress: rekordbox::Progress { stage: "starting".into(), total: songs.len(), ..Default::default() }, ..Default::default() });
+    }
+    let jid = id.clone();
+    let count = songs.len();
+    std::thread::spawn(move || {
+        struct Free;
+        impl Drop for Free {
+            fn drop(&mut self) {
+                RB_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        let _free = Free;
+        let set = |f: &dyn Fn(&mut RbJob)| {
+            if let Some(j) = RB_JOBS.lock().unwrap().get_mut(&jid) {
+                f(j);
+            }
+        };
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            rekordbox::export_set(&stick, &name, &songs, convert, &|p| set(&|j| j.progress = p.clone()))
+        }))
+        .unwrap_or_else(|_| Err("dubplate hit a bug writing the stick; the stick's library was backed up first".into()));
+        set(&|j| {
+            match &r {
+                Ok(rep) => j.report = Some(rep.clone()),
+                Err(e) => j.error = Some(e.clone()),
+            }
+            j.finished = true;
+        });
+    });
+    json!({"job": id, "count": count})
 }
 
 #[cfg(test)]
