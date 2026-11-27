@@ -20,6 +20,7 @@ and it updates itself.
 
 [Install](#install) · [Quick start](#quick-start) · [Using the web page](#using-the-web-page) ·
 [Terminal](#terminal) · [USB sticks for CDJs/XDJs](#usb-sticks-for-cdjs--xdjs) ·
+[Missing songs on Soulseek](#finding-missing-songs-on-soulseek) · [Settings](#settings) ·
 [What it remembers](#what-it-remembers) · [Windows](#windows-music-on-a-home-server) ·
 [How matching works](#how-matching-works) · [Troubleshooting](#troubleshooting) ·
 [Development](#development)
@@ -55,8 +56,9 @@ and restarts. **Go back to …** in the page footer returns to the version you h
    red = missing).
 4. Pick **Copy to a folder** (e.g. your Traktor folder) or **Make a USB for the decks**, choose
    where, and click the button.
-5. Later, after getting the missing songs, load the same list again: only the new ones
-   are copied.
+5. Missing songs: if you use slskd, **🔎 Find on Soulseek** fetches them (see
+   [below](#finding-missing-songs-on-soulseek)). Otherwise get them your own way, then load the
+   same list again: only the new ones are copied.
 
 Every option on the page has a **?** next to it that explains it (hover, or tap on a phone),
 and **How dubplate works** at the top of the page is a short guide.
@@ -169,6 +171,70 @@ Copies are written to a hidden temporary file and only get their real name once 
 completely on the stick. A stick pulled out, or a window closed mid-copy, never leaves a
 half-written song behind under its real name.
 
+## Finding missing songs on Soulseek
+
+If you run [slskd](https://github.com/slskd/slskd) (a Soulseek client with a web page),
+dubplate can look for your missing songs there and download the ones you pick.
+
+**Connect it once** (⚙ Settings → Soulseek):
+
+1. **slskd address:** the address you open slskd with, e.g. `http://localhost:5030`.
+2. **API key:** click **Make a key for me**. dubplate shows these lines with your new key:
+
+   ```yaml
+   web:
+     authentication:
+       api_keys:
+         dubplate:
+           key: <your key>
+           role: readwrite
+   ```
+
+   Add them to slskd's options: in slskd's web page under **System → Options → Edit**, or in
+   its `slskd.yml`. If there's already an `api_keys:` line, add only the `dubplate:` part
+   under it. Save, and restart slskd if it asks. The key needs the role `readwrite`: slskd's
+   default (read-only) can't search or download.
+3. Click **Test connection**. It shows slskd's version and whether it's logged in to Soulseek.
+4. **Add slskd's download folder** under *Also look in*, so downloaded songs are found.
+   dubplate offers it with one click when it can see that folder. If slskd runs in Docker,
+   its folders have other names inside the container than on your computer: pick the same
+   folder with **+ Add a folder…** instead.
+5. **Save settings.**
+
+**Use it:** after loading a list, click **🔎 Find N on Soulseek** (or **Find on Soulseek**
+under one song). For each song, dubplate:
+
+- searches with the song's words (artist, title, and the version, e.g. "extended"; without
+  noise like "(Original Mix)" or "feat. X"),
+- reads the results with the same rules it uses for your library, so a **radio edit is never
+  picked when you asked for the Extended Mix**,
+- prefers lossless (FLAC/AIFF/WAV), then MP3 320, drops anything under 192 kbps, and then
+  prefers people who can send it now,
+- shows its pick under the song, ticked if it's an exact match, with the other results in a
+  menu.
+
+Check the picks, then click **⬇ Download N from Soulseek**. Progress shows under each song
+("waiting in queue", "downloading 45%"). When they're done, dubplate reads your library
+again and the songs turn green, ready to copy.
+
+dubplate only searches and queues what you confirm; slskd does the downloading, with its
+own settings and limits. Your API key is stored only on your computer, in dubplate's
+settings file, and is never shown again after saving.
+
+## Settings
+
+**⚙ Settings** is at the top of the page:
+
+- **Main music folder:** the folder with your music. On Windows the default is the music
+  server's share, found automatically.
+- **Also look in:** other folders with songs that should count as your library, such as a
+  second drive or the folder your downloader saves to. Songs from them show the folder's
+  name in front of their path.
+- **Soulseek (slskd):** address and API key; see [above](#finding-missing-songs-on-soulseek).
+
+Settings can only be changed on the computer dubplate runs on, not from another device. The
+terminal commands use the same folders (`--music` replaces the main one for that run).
+
 ## What it remembers
 
 dubplate remembers what it copied **to each destination**: each folder, and each playlist
@@ -266,6 +332,13 @@ share. The saved list lives in `~/.cache/dubplate/` (or `%LOCALAPPDATA%\dubplate
 - **Windows can't find the server.** Make sure you can open `\\<server>\home\Music` in File
   Explorer. On the server, Samba's `hosts allow` and the firewall must allow your network.
 - **Port 8765 is taken.** `dubplate serve --port 8766`.
+- **Soulseek: "didn't accept the API key".** The key in ⚙ Settings must match the one in
+  slskd's options exactly, and slskd may need a restart after adding it.
+- **Soulseek: "the API key is read-only".** Give the key `role: readwrite` in slskd.
+- **Soulseek: downloaded, but still red.** The song is in slskd's download folder, which
+  isn't in your library folders: add it under ⚙ Settings → Also look in.
+- **Soulseek: "Nothing on Soulseek right now".** Nobody online shares it at the moment, or
+  it's named differently; try again later or edit the song's name on your list.
 
 ## Development
 
@@ -283,6 +356,7 @@ cargo build --release  # target/release/dubplate
   - `copy.rs`: copying, USB conversion, the copy memory.
   - `server.rs` and `page.html`: the web page.
   - `discover.rs`: settings and the Windows server finder.
+  - `slskd.rs`: Soulseek through slskd (search, ranking, downloads), with a fake slskd for tests.
   - `update.rs`: the updater.
 - **Builds.** Every push builds and tests the Windows and Linux programs on GitHub's machines
   (`.github/workflows/build.yml`), including a smoke test of each built program
@@ -291,7 +365,7 @@ cargo build --release  # target/release/dubplate
   updater shows them), then:
 
   ```
-  git tag v2.1.1 && git push origin v2.1.1
+  git tag v2.2.0 && git push origin v2.2.0
   ```
 
   The release gets both programs and a `SHA256SUMS` file the updater checks downloads against.

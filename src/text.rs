@@ -328,6 +328,19 @@ pub fn split_version(title: &str) -> (String, String) {
     if let Some(v) = SPLIT_CACHE.lock().unwrap().get(title) {
         return v.clone();
     }
+    let (base, words) = split_version_words(title);
+    let v = (base, words.concat());
+    let mut cache = SPLIT_CACHE.lock().unwrap();
+    if cache.len() > 200_000 {
+        cache.clear();
+    }
+    cache.insert(title.to_string(), v.clone());
+    v
+}
+
+/// the title without its version tags, and the version's own words in order
+/// ("Honey (feat. X) (Extended Mix)" -> ("Honey", ["extended"]))
+pub fn split_version_words(title: &str) -> (String, Vec<String>) {
     let mut t = title.to_string();
     let mut tags: Vec<String> = Vec::new();
     while let Some(c) = VERSION_TAIL.captures(&t) {
@@ -343,25 +356,14 @@ pub fn split_version(title: &str) -> (String, String) {
         tags.push(tag);
         t.truncate(m.start());
     }
-    let mut words = String::new();
+    let mut words = Vec::new();
     for tag in tags.iter().rev() {
         if FEAT_TAG.is_match(tag) {
             continue; // "(feat. X)" is not a different version
         }
-        for w in tokens(tag) {
-            if !harmless(&w) {
-                words.push_str(&w);
-            }
-        }
+        words.extend(tokens(tag).into_iter().filter(|w| !harmless(w)));
     }
-    let base = FEAT_TAIL.replace(&t, "").trim().to_string();
-    let v = (base, words);
-    let mut cache = SPLIT_CACHE.lock().unwrap();
-    if cache.len() > 200_000 {
-        cache.clear();
-    }
-    cache.insert(title.to_string(), v.clone());
-    v
+    (FEAT_TAIL.replace(&t, "").trim().to_string(), words)
 }
 
 pub fn same_version(a: &str, b: &str) -> bool {

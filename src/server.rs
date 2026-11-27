@@ -5,6 +5,7 @@ use crate::discover;
 use crate::library::Library;
 use crate::lists;
 use crate::paths::{self, human, is_audio, join, nearest_existing, WINDOWS};
+use crate::slskd;
 use crate::update;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -24,6 +25,8 @@ pub struct Options {
     pub dest: Option<String>,
     /// extra names the page may be opened under (reachable from the network only)
     pub allow_hosts: Vec<String>,
+    /// the music folder was given with --music (it wins over Settings)
+    pub music_from_cli: bool,
 }
 
 #[derive(Serialize, Default, Clone)]
@@ -50,6 +53,7 @@ struct Ctx {
     dest: Option<String>,
     local_only: bool,
     allow_hosts: Vec<String>,
+    music_from_cli: bool,
 }
 
 fn when(t: Option<chrono::NaiveDateTime>) -> Value {
@@ -145,20 +149,16 @@ pub fn serve(o: Options) {
     };
 
     let lib = Arc::new(Library::new(&o.music));
+    lib.set_extra(&discover::setting_list("extra_folders")); // "also look in" folders from Settings
     if lib.load_cache() {
         println!(
             "Using saved song list ({} songs); checking for new songs in the background.",
             paths::thousands(lib.len())
         );
     } else {
-        println!("Reading your library {} for the first time ...", lib.root);
+        println!("Reading your library {} for the first time ...", lib.root());
     }
-    {
-        let lib = lib.clone();
-        std::thread::spawn(move || {
-            lib.scan(|_| {});
-        });
-    }
+    lib.start_scan();
     println!("\n  Dubplate {} is running at  {url}", update::VERSION);
     if o.host == "0.0.0.0" {
         println!("  (also reachable from other devices on your network at this computer's IP)");
@@ -171,6 +171,7 @@ pub fn serve(o: Options) {
         lib,
         dest: o.dest,
         local_only: o.host == "127.0.0.1" || o.host == "localhost",
+        music_from_cli: o.music_from_cli,
         allow_hosts: {
             // this computer's own name, plus any the user allowed
             let mut a: Vec<String> = o
@@ -296,7 +297,16 @@ fn handle(ctx: &Ctx, mut req: tiny_http::Request) {
         return;
     }
     let b: Value = serde_json::from_str(&body).unwrap_or(json!({}));
-    let (v, then_restart) = post(ctx, &path, &b);
+    // settings can only be changed on the computer dubplate runs on (not from the network)
+    let here = from_this_computer(&req);
+    let (v, then_restart) = if path == "/api/settings" && !here {
+        (
+            json!({"error": "Settings can only be changed on the computer dubplate is running on."}),
+            false,
+        )
+    } else {
+        post(ctx, &path, &b)
+    };
     let _ = req.respond(json_response(200, &v));
     if then_restart {
         std::thread::spawn(|| {
@@ -354,9 +364,31 @@ fn machine_name() -> Option<String> {
 /// can't step out of the library - while songs in a library folder that is a shortcut
 /// (symlink) to another drive still count.
 fn in_library(ctx: &Ctx, p: &str) -> bool {
-    let root = paths::normcase(&ctx.lib.root);
-    let inside = format!("{}{}", root.trim_end_matches(paths::SEP), paths::SEP);
-    paths::normcase(&paths::abspath(p)).starts_with(&inside) && paths::isfile(p) && is_audio(p)
+    let p_norm = paths::normcase(&paths::abspath(p));
+    let inside = |root: &String| {
+        let r = paths::normcase(root);
+        p_norm.starts_with(&format!("{}{}", r.trim_end_matches(paths::SEP), paths::SEP))
+    };
+    ctx.lib.roots().iter().any(inside) && paths::isfile(p) && is_audio(p)
+}
+
+/// a request from someone at this computer: not from the network, and not passed on by a
+/// reverse proxy running here (which would also arrive from 127.0.0.1)
+fn from_this_computer(req: &tiny_http::Request) -> bool {
+    let peer = req.remote_addr().is_some_and(|a| match a.ip() {
+        std::net::IpAddr::V6(v6) => v6.to_canonical().is_loopback(), // ::ffff:127.0.0.1 too
+        ip => ip.is_loopback(),
+    });
+    let proxied = [
+        "X-Forwarded-For",
+        "Forwarded",
+        "X-Real-IP",
+        "X-Forwarded-Host",
+    ]
+    .iter()
+    .any(|h| header(req, h).is_some());
+    let host = header(req, "Host").unwrap_or("");
+    peer && !proxied && host_allowed(host, true, &[])
 }
 
 fn s<'a>(b: &'a Value, k: &str) -> &'a str {
@@ -371,15 +403,27 @@ fn get(ctx: &Ctx, path: &str, q: &HashMap<String, String>) -> Value {
             let fi = FFMPEG_INSTALL.lock().unwrap().clone();
             let home = paths::home();
             json!({
-                "root": lib.root, "count": lib.len(), "ready": lib.is_ready(),
+                "root": lib.root(), "count": lib.len(), "ready": lib.is_ready(),
                 "scanning": lib.scanning.load(Ordering::SeqCst), "progress": lib.progress.load(Ordering::Relaxed),
                 "scanned": when(lib.scanned_at()), "ffmpeg": ff.is_some() && fp.is_some(), "windows": WINDOWS,
-                "version": update::VERSION, "appdir": paths::app_dir(), "ffmpeg_installing": fi.0, "ffmpeg_log": fi.1,
+                "version": update::VERSION, "appdir": paths::app_dir(), "soulseek": slskd::configured(), "ffmpeg_installing": fi.0, "ffmpeg_log": fi.1,
                 "home": home, "dest": ctx.dest.clone().unwrap_or_default(),
                 "example": join(&join(&home, "Desktop"), "My songs"),
             })
         }
         "/api/ls" => list_dir(q.get("path").map(String::as_str).unwrap_or("~")),
+        "/api/settings" => settings_view(ctx),
+        "/api/slskd/transfers" => match slskd::Conn::from_settings().and_then(|c| c.transfers()) {
+            Ok(t) => json!({"transfers": t}),
+            Err(e) => json!({"error": e}),
+        },
+        p if p.starts_with("/api/slskd/search/") => {
+            let id = &p["/api/slskd/search/".len()..];
+            match SEARCHES.lock().unwrap().get(id) {
+                Some((j, _)) => serde_json::to_value(j).unwrap(),
+                None => json!({"error": "not found"}),
+            }
+        }
         "/api/update/status" => {
             serde_json::to_value(update::status(q.contains_key("check"))).unwrap_or(json!({}))
         }
@@ -624,13 +668,71 @@ fn decode_b64(s: &str) -> Vec<u8> {
 fn post(ctx: &Ctx, path: &str, b: &Value) -> (Value, bool) {
     let lib = &ctx.lib;
     let v = match path {
-        "/api/rescan" => {
-            if !lib.scanning.load(Ordering::SeqCst) {
-                let lib = lib.clone();
-                std::thread::spawn(move || {
-                    lib.scan(|_| {});
-                });
+        "/api/settings" => match save_settings(lib, b) {
+            Ok(()) => settings_view(ctx),
+            Err(e) => json!({"error": e}),
+        },
+        "/api/slskd/test" => {
+            // test what's typed in (before saving), or what's saved
+            let conn = match (
+                b.get("url").and_then(Value::as_str),
+                b.get("key")
+                    .and_then(Value::as_str)
+                    .filter(|k| !k.is_empty()),
+            ) {
+                (Some(u), Some(k)) => Ok(slskd::Conn::new(u, k)),
+                // the saved key only ever goes to the saved address
+                (Some(u), None) => {
+                    let saved = discover::setting_str("slskd_url")
+                        .unwrap_or_else(|| slskd::DEFAULT_URL.into());
+                    if u.trim().trim_end_matches('/') == saved.trim_end_matches('/') {
+                        slskd::Conn::from_settings()
+                    } else {
+                        Err("Enter the API key for this address (the saved key is only used with the saved address).".to_string())
+                    }
+                }
+                _ => slskd::Conn::from_settings(),
+            };
+            match conn.and_then(|c| c.test()) {
+                Ok(v) => v,
+                Err(e) => json!({"error": e}),
             }
+        }
+        "/api/slskd/search" => start_search(b),
+        "/api/slskd/download" => {
+            let items: Vec<(String, String, u64)> = b
+                .get("items")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|i| {
+                            Some((
+                                i.get("username")?.as_str()?.to_string(),
+                                i.get("filename")?.as_str()?.to_string(),
+                                i.get("size")?.as_u64()?,
+                            ))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            if items.is_empty() {
+                json!({"error": "Nothing selected to download."})
+            } else {
+                match slskd::Conn::from_settings() {
+                    Err(e) => json!({"error": e}),
+                    Ok(c) => {
+                        // per song: queued, or why not (a failing sender doesn't stop the others)
+                        let r = c.download(&items);
+                        json!({"results": r.into_iter().map(|x| match x {
+                            Ok(()) => json!({"ok": true}),
+                            Err(e) => json!({"error": e}),
+                        }).collect::<Vec<_>>()})
+                    }
+                }
+            }
+        }
+        "/api/rescan" => {
+            lib.start_scan();
             json!({"started": true})
         }
         "/api/match" => {
@@ -754,6 +856,261 @@ fn install_ffmpeg() {
         Err(e) => format!("couldn't run winget: {e}"),
     };
     *FFMPEG_INSTALL.lock().unwrap() = (false, log);
+}
+
+// ---------------------------------------------------------------------------- settings
+
+fn settings_view(ctx: &Ctx) -> Value {
+    let lib = &ctx.lib;
+    json!({
+        "music": lib.root(),
+        "music_from_cli": ctx.music_from_cli,
+        "extra_folders": discover::setting_list("extra_folders").iter()
+            .map(|f| json!({"path": f, "exists": paths::isdir(f)})).collect::<Vec<_>>(),
+        "slskd": {
+            "url": discover::setting_str("slskd_url").unwrap_or_else(|| slskd::DEFAULT_URL.into()),
+            "key_set": discover::setting_str("slskd_key").is_some(), // the key itself never leaves
+        },
+    })
+}
+
+/// Apply what the Settings panel sent. Everything is checked first, so a mistake in one field
+/// changes nothing; fields that weren't sent stay as they are.
+fn save_settings(lib: &Arc<Library>, b: &Value) -> Result<(), String> {
+    // ---- check
+    let music = match b.get("music").and_then(Value::as_str) {
+        None => None,
+        Some(m) if m.trim().is_empty() => return Err("Choose your main music folder.".into()),
+        Some(m) => {
+            let m = paths::abspath(&paths::expanduser(m.trim()));
+            if !paths::isdir(&m) {
+                return Err(format!("The music folder {m} doesn't exist."));
+            }
+            Some(m)
+        }
+    };
+    let saved_extra = discover::setting_list("extra_folders");
+    let extra = match b.get("extra_folders").and_then(Value::as_array) {
+        None => None,
+        Some(list) => {
+            let mut folders = Vec::new();
+            for f in list
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|f| !f.is_empty())
+            {
+                let f = paths::abspath(&paths::expanduser(f));
+                // a folder that was already saved may be on a drive that's unplugged right now:
+                // keep it. Only newly added folders must exist.
+                if !paths::isdir(&f) && !saved_extra.contains(&f) {
+                    return Err(format!("The folder {f} doesn't exist (on this computer)."));
+                }
+                if !folders.contains(&f) {
+                    folders.push(f);
+                }
+            }
+            Some(folders)
+        }
+    };
+    let url = match b.get("slskd_url").and_then(Value::as_str).map(str::trim) {
+        None => None,
+        Some("") => Some(None), // back to the default
+        Some(u) if u.starts_with("http://") || u.starts_with("https://") => {
+            Some(Some(u.trim_end_matches('/').to_string()))
+        }
+        Some(_) => return Err(
+            "The slskd address should start with http:// or https:// (e.g. http://localhost:5030)."
+                .into(),
+        ),
+    };
+    let key = match b.get("slskd_key").and_then(Value::as_str).map(str::trim) {
+        None => None,
+        Some("") => Some(None), // disconnect
+        Some(k) if (16..=255).contains(&k.chars().count()) => Some(Some(k.to_string())),
+        Some(_) => return Err("An slskd API key is 16 to 255 characters long.".into()),
+    };
+    // ---- apply
+    let mut rescan = false;
+    if let Some(m) = music {
+        if m != lib.root() {
+            discover::save_setting("music", Value::from(m.clone()));
+            lib.set_root(&m);
+            rescan = true;
+        }
+    }
+    if let Some(folders) = extra {
+        if folders != saved_extra {
+            discover::save_setting("extra_folders", Value::from(folders.clone()));
+            lib.set_extra(&folders);
+            rescan = true;
+        }
+    }
+    match url {
+        Some(Some(u)) => discover::save_setting("slskd_url", Value::from(u)),
+        Some(None) => discover::remove_setting("slskd_url"),
+        None => {}
+    }
+    match key {
+        Some(Some(k)) => discover::save_setting("slskd_key", Value::from(k)),
+        Some(None) => discover::remove_setting("slskd_key"),
+        None => {}
+    }
+    if rescan {
+        lib.start_scan(); // also fine if a scan is running: it goes round once more
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------- Soulseek searches
+
+#[derive(Serialize, Clone, Default)]
+struct SearchItem {
+    /// waiting | searching | done | error
+    state: String,
+    query: String,
+    error: Option<String>,
+    candidates: Vec<slskd::Candidate>,
+}
+
+#[derive(Serialize, Clone, Default)]
+struct SearchJob {
+    items: HashMap<String, SearchItem>,
+    done: bool,
+}
+
+static SEARCHES: LazyLock<Mutex<HashMap<String, (SearchJob, std::time::Instant)>>> =
+    LazyLock::new(Default::default);
+/// Soulseek searches running right now, across every click: at most 3 (the network dislikes floods)
+static RUNNING: (Mutex<usize>, std::sync::Condvar) = (Mutex::new(0), std::sync::Condvar::new());
+
+fn search_slot() -> impl Drop {
+    struct Slot;
+    impl Drop for Slot {
+        fn drop(&mut self) {
+            *RUNNING.0.lock().unwrap() -= 1;
+            RUNNING.1.notify_one();
+        }
+    }
+    let mut n = RUNNING.0.lock().unwrap();
+    while *n >= 3 {
+        n = RUNNING.1.wait(n).unwrap();
+    }
+    *n += 1;
+    Slot
+}
+
+/// search Soulseek for several songs, three at a time (the network doesn't like floods)
+fn start_search(b: &Value) -> Value {
+    let conn = match slskd::Conn::from_settings() {
+        Ok(c) => Arc::new(c),
+        Err(e) => return json!({"error": e}),
+    };
+    let prefer = Some(s(b, "prefer"))
+        .filter(|p| !p.is_empty())
+        .unwrap_or("flac")
+        .to_string();
+    let songs: Vec<(String, String, String, String)> = b
+        .get("songs")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| {
+                    let key = x.get("key")?.as_str()?.to_string();
+                    let g = |k: &str| x.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+                    Some((key, g("artist"), g("title"), g("album")))
+                })
+                .filter(|(_, _, t, _)| !t.trim().is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    if songs.is_empty() {
+        return json!({"error": "No songs to look for."});
+    }
+    let id = format!(
+        "{:x}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+            & 0xff_ffff_ffff
+    );
+    let mut job = SearchJob::default();
+    for (key, a, t, _) in &songs {
+        job.items.insert(
+            key.clone(),
+            SearchItem {
+                state: "waiting".into(),
+                query: slskd::query(a, t),
+                ..Default::default()
+            },
+        );
+    }
+    {
+        let mut all = SEARCHES.lock().unwrap();
+        all.retain(|_, (j, t)| !j.done || t.elapsed() < std::time::Duration::from_secs(1800)); // forget old ones
+        all.insert(id.clone(), (job, std::time::Instant::now()));
+    }
+    let queue = Arc::new(Mutex::new(songs));
+    let workers = Arc::new(std::sync::atomic::AtomicUsize::new(3));
+    for _ in 0..3 {
+        let (queue, conn, id, prefer, workers) = (
+            queue.clone(),
+            conn.clone(),
+            id.clone(),
+            prefer.clone(),
+            workers.clone(),
+        );
+        std::thread::spawn(move || {
+            loop {
+                let Some((key, artist, title, album)) = queue.lock().unwrap().pop() else {
+                    break;
+                };
+                let set = |f: &dyn Fn(&mut SearchItem)| {
+                    if let Some(it) = SEARCHES
+                        .lock()
+                        .unwrap()
+                        .get_mut(&id)
+                        .and_then(|j| j.0.items.get_mut(&key))
+                    {
+                        f(it);
+                    }
+                };
+                let _slot = search_slot();
+                set(&|it| it.state = "searching".into());
+                let q = slskd::query(&artist, &title);
+                let mut r = conn
+                    .search(&q)
+                    .map(|resp| slskd::rank(&artist, &title, &album, &prefer, &resp, 8));
+                // nothing? try without the artist (it's often spelled differently on Soulseek)
+                if matches!(&r, Ok(c) if c.is_empty()) {
+                    let base = crate::text::split_version(&title).0;
+                    let q2 = slskd::query("", &title);
+                    if q2 != q && crate::text::tokens(&base).len() >= 2 {
+                        if let Ok(resp) = conn.search(&q2) {
+                            r = Ok(slskd::rank(&artist, &title, &album, &prefer, &resp, 8));
+                        }
+                    }
+                }
+                match r {
+                    Ok(c) => set(&|it| {
+                        it.candidates = c.clone();
+                        it.state = "done".into();
+                    }),
+                    Err(e) => set(&|it| {
+                        it.error = Some(e.clone());
+                        it.state = "error".into();
+                    }),
+                }
+            }
+            if workers.fetch_sub(1, std::sync::atomic::Ordering::SeqCst) == 1 {
+                if let Some((j, _)) = SEARCHES.lock().unwrap().get_mut(&id) {
+                    j.done = true;
+                }
+            }
+        });
+    }
+    json!({"job": id})
 }
 
 fn start_copy(ctx: &Ctx, b: &Value) -> Value {
@@ -942,6 +1299,7 @@ mod tests {
             dest: None,
             local_only: true,
             allow_hosts: vec![],
+            music_from_cli: false,
         };
         let r = root.to_string_lossy().into_owned();
         assert!(in_library(&ctx, &paths::join(&r, "in.mp3")));

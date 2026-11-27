@@ -418,6 +418,16 @@ static TMP: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new
 /// write a whole file safely: to a temporary name first (unique, so two writers can't mix their
 /// data), then renamed over the old one
 pub fn write_atomic(path: &str, data: &[u8]) -> std::io::Result<()> {
+    write_atomic_as(path, data, false)
+}
+
+/// like write_atomic, for files with secrets in them (settings: the slskd API key): only the
+/// user can read them (on Linux/macOS; on Windows the user's own app folder already is private)
+pub fn write_private(path: &str, data: &[u8]) -> std::io::Result<()> {
+    write_atomic_as(path, data, true)
+}
+
+fn write_atomic_as(path: &str, data: &[u8], private: bool) -> std::io::Result<()> {
     if let Some(d) = Path::new(path).parent() {
         std::fs::create_dir_all(d)?;
     }
@@ -425,6 +435,13 @@ pub fn write_atomic(path: &str, data: &[u8]) -> std::io::Result<()> {
     let n = TMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let tmp = format!("{path}.{}-{n}.tmp", std::process::id());
     let mut r = std::fs::write(&tmp, data);
+    #[cfg(unix)]
+    if private && r.is_ok() {
+        use std::os::unix::fs::PermissionsExt;
+        r = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+    }
+    #[cfg(not(unix))]
+    let _ = private;
     if r.is_ok() {
         for attempt in 1..=10 {
             r = std::fs::rename(&tmp, path);

@@ -78,12 +78,24 @@ details.help summary{cursor:pointer;font-weight:600}
 details.help h3{font-size:14.5px;margin:14px 0 4px}
 details.help p,details.help li{font-size:14px;color:var(--ink);margin:4px 0}
 details.help ul{padding-left:20px;margin:4px 0}
+.sethead{font-size:15px;margin:18px 0 8px;padding-top:12px;border-top:1px solid var(--line)}
+.sethead:first-of-type{border-top:none;padding-top:0}
+.extra{display:flex;gap:8px;align-items:center;padding:6px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:6px;font-size:14px;overflow-wrap:anywhere}
+.extra span{flex:1}.extra.missing{border-color:var(--bad);color:var(--bad)}
+pre.yaml{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px;font:13px/1.45 ui-monospace,Menlo,monospace;overflow-x:auto;margin:8px 0}
+.soul{margin-top:8px;padding:8px 10px;border:1px dashed var(--line);border-radius:9px;font-size:13px;background:var(--card)}
+.soul a{color:var(--acc);cursor:pointer;text-decoration:underline}
+.soul .pickline{display:flex;gap:8px;align-items:flex-start}
+.soul select{width:100%;margin-top:6px}
+.badge{font-size:11px;font-weight:700;padding:1px 6px;border-radius:5px;border:1px solid var(--line);color:var(--mute);margin-right:4px;white-space:nowrap}
+.badge.good{border-color:var(--ok);color:var(--ok)}.badge.warn{border-color:var(--warn);color:var(--warn)}
+#soulbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0 12px;padding:10px 12px;border-radius:10px;background:var(--bg)}
 .legend{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:0}
 .err{color:var(--bad);margin-top:8px}
 </style></head><body><main>
 <h1>Dubplate</h1>
 <p class="sub">Give it a list of songs. It finds them in <b id="root">your music folder</b> and copies them to another folder.
-It only copies, so nothing in your library is moved or deleted. <span id="libinfo" class="small"></span> <a href="#" id="rescan" class="small">Rescan library</a><button type="button" class="tip" data-tip="Read your music folder again, e.g. after adding songs. dubplate also does this by itself every time it starts.">?</button></p>
+It only copies, so nothing in your library is moved or deleted. <span id="libinfo" class="small"></span> <a href="#" id="rescan" class="small">Rescan library</a> · <a href="#" id="opensettings" class="small">⚙ Settings</a><button type="button" class="tip" data-tip="Read your music folder again, e.g. after adding songs. dubplate also does this by itself every time it starts.">?</button></p>
 
 <details class="help" id="help"><summary>How dubplate works</summary>
 <h3>1. Give it a list</h3>
@@ -101,11 +113,51 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
 <li><b>Copy to a folder</b> (e.g. your Traktor music folder): the files are copied exactly as they are.</li>
 <li><b>Make a USB for the decks</b>: one numbered playlist folder on the stick. Anything older CDJs/XDJs can't play (FLAC, Opus, ALAC, hi-res) is converted to AIFF or MP3; tags and artwork are kept. On the deck, browse the stick in its <b>folder</b> view.</li>
 </ul>
+<h3>Finding missing songs on Soulseek</h3>
+<p>If you use <a href="https://github.com/slskd/slskd" target="_blank" rel="noopener">slskd</a> (a Soulseek client), connect it in <b>⚙ Settings</b>. Then <b>🔎 Find on Soulseek</b> looks for the red and purple songs. dubplate picks the best file for each (the right version, good quality, someone who can send it soon) and shows it under the song, with other choices in a menu. Untick or change any, then click <b>Download</b>. When the downloads finish, dubplate reads your library again and they turn green, ready to copy. Add slskd's download folder under <b>Also look in</b> so they're found.</p>
+<h3>Settings</h3>
+<p><b>⚙ Settings</b> (top of the page): your main music folder, other folders to also look in (a second drive, a downloads folder), and the Soulseek connection. Settings can only be changed on the computer dubplate runs on.</p>
 <h3>It remembers what it copied</h3>
 <p>Each destination has its own memory. Songs already copied to that folder (or that stick) are hidden, so after you've added missing songs to your library you can load the same list again and only the new ones are copied. A song you copied to your DJ folder still shows up for the USB, because the stick has its own memory. Click <b>✓ already copied</b> to see them, and tick one to copy it again.</p>
 <h3>It never changes your library</h3>
 <p>dubplate only ever copies. It never moves, deletes or overwrites a file: if a file with the same name is already there it's left alone, and a different one gets " (2)" added. Its own memory and settings live in <code id="appdir">its settings folder</code>.</p>
 </details>
+
+<section class="card hidden" id="setcard">
+  <div class="row" style="justify-content:space-between"><h2 style="font-size:18px;margin:0">⚙ Settings</h2><button id="setclose">Close</button></div>
+  <h3 class="sethead">Music library</h3>
+  <label class="fieldlabel" for="set_music">Main music folder<button type="button" class="tip" data-tip="The folder with your music. dubplate reads every song in it (and its subfolders) and never changes anything in it.">?</button></label>
+  <div class="row"><input type="text" id="set_music" spellcheck="false"><button data-browse="set_music">Browse…</button></div>
+  <div class="browser" id="br_set_music"></div>
+  <p class="small" id="musicnote" style="margin:4px 0 0"></p>
+  <label class="fieldlabel" style="margin-top:14px">Also look in<button type="button" class="tip" data-tip="Other folders with songs that should count as your library, e.g. where your Soulseek client or another downloader saves songs, or a second drive. Songs from these folders are shown with the folder's name in front.">?</button></label>
+  <div id="extras"></div>
+  <div class="row"><button id="addextra">+ Add a folder…</button><button id="addslskdfolder" class="hidden"></button></div>
+  <div class="browser" id="br_extra"></div>
+  <p class="small" id="slskdfolderinfo"></p>
+  <h3 class="sethead">Soulseek (slskd)</h3>
+  <p class="small" style="margin-top:-4px">Connect your own <a href="https://github.com/slskd/slskd" target="_blank" rel="noopener">slskd</a> to look for missing songs on Soulseek. dubplate searches and shows you what it found; nothing downloads until you confirm.</p>
+  <label class="fieldlabel" for="set_url">slskd address<button type="button" class="tip" data-tip="The address you open slskd's web page with, e.g. http://localhost:5030 when it runs on this computer, or http://myserver:5030.">?</button></label>
+  <input type="text" id="set_url" spellcheck="false" placeholder="http://localhost:5030" style="width:100%">
+  <label class="fieldlabel" for="set_key" style="margin-top:10px">API key<button type="button" class="tip" data-tip="A password-like key that lets dubplate use slskd. It's set in slskd's options (see “How do I get an API key?” below), needs the role readwrite, and is stored only on this computer.">?</button></label>
+  <div class="row"><input type="password" id="set_key" spellcheck="false" autocomplete="off"><button id="showkey">Show</button></div>
+  <details style="margin-top:8px"><summary class="small" style="cursor:pointer">How do I get an API key?</summary>
+   <ol class="small" style="padding-left:20px;margin:8px 0">
+    <li>Click <button id="makekey">Make a key for me</button> (or type any 16 or more letters and numbers into the box above).</li>
+    <li>Add these lines to slskd's options: in slskd's web page under <b>System → Options → Edit</b>, or in its <code>slskd.yml</code> file. If there's already an <code>api_keys:</code> line, add only the <code>dubplate:</code> part under it.</li>
+   </ol>
+   <pre class="yaml" id="keyyaml">web:
+  authentication:
+    api_keys:
+      dubplate:
+        key: (your key)
+        role: readwrite</pre>
+   <div class="row"><button id="copyyaml">Copy these lines</button><span class="small" id="copymsg"></span></div>
+   <ol class="small" start="3" style="padding-left:20px;margin:8px 0"><li>Save, and restart slskd if it asks.</li><li>Come back here, click <b>Test connection</b>, then <b>Save settings</b>.</li></ol>
+  </details>
+  <div class="row" style="margin-top:10px"><button id="testslskd">Test connection</button><button id="disconnect" class="hidden" title="Remove the saved API key from dubplate">Disconnect</button><span id="slskdstatus" class="small"></span></div>
+  <div class="row" style="margin-top:16px"><button class="primary" id="setsave">Save settings</button><span id="setmsg" class="small"></span></div>
+</section>
 
 <section class="card hidden" id="updcard" style="border-color:var(--acc)">
   <div class="row" style="justify-content:space-between"><h2 style="font-size:17px;margin:0" id="updtitle"></h2>
@@ -132,9 +184,11 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
   <div class="step"><b>2</b><h2>Check what was found</h2>
   <button type="button" class="tip" data-tip="Green: the exact song. Orange: a close match, check it. Purple: you don't have that version (e.g. the Extended Mix), only another one - not copied unless you tick it. Red: not in your library. Click a coloured count to show only those songs.">?</button></div>
   <div class="summary" id="summary"></div>
-  <div class="row" style="margin-bottom:10px"><button id="dlmissing" class="hidden">⬇ Download the missing songs as a CSV</button>
+  <div class="row" style="margin-bottom:10px"><button id="soulall" class="hidden"></button><button type="button" class="tip hidden" id="soultip" data-tip="Look for the missing (red) and other-version (purple) songs on Soulseek, through your own slskd. dubplate picks the best file for each - the right version, good quality, someone who can send it soon - and shows it under the song. Nothing downloads until you click Download.">?</button>
+    <button id="dlmissing" class="hidden">⬇ Download the missing songs as a CSV</button>
     <button type="button" class="tip" id="dltip" data-tip="A spreadsheet of the red (not found) and purple (other version only) songs, with the closest thing your library has. A shopping list for what to get next.">?</button>
     <span class="small" id="filterinfo"></span></div>
+  <div id="soulbar" class="hidden"><button class="primary" id="souldl"></button><span class="small" id="soulmsg"></span></div>
   <div class="tablewrap"><table><thead><tr><th style="width:28px"><input type="checkbox" id="all" checked title="select all"></th><th>#</th><th>On your list</th><th>File that will be copied <button type="button" class="tip" data-tip="▶ plays the file. The menu under a song lists other versions you own; pick one to use it instead. Untick a song to leave it out.">?</button></th></tr></thead>
   <tbody id="tbody"></tbody></table></div>
 </section>
@@ -240,21 +294,22 @@ $('#file').onchange=e=>{if(e.target.files[0])loadFile(e.target.files[0]);e.targe
 $('#pastego').onclick=()=>{LISTNAME='pasted list';if(!$('#usb_name').value)$('#usb_name').value='My set';match({filename:'pasted.txt',text:$('#paste').value})};
 $('#prefer').onchange=()=>{remember();if(window.LAST)match(window.LAST)};
 function loadFile(f){LISTNAME=f.name.replace(/\.[^.]+$/,'');$('#usb_name').value=LISTNAME;const r=new FileReader();r.onload=()=>{const b=new Uint8Array(r.result);let s='';for(let i=0;i<b.length;i+=32768)s+=String.fromCharCode.apply(null,b.subarray(i,i+32768));match({filename:f.name,data:btoa(s)})};r.readAsArrayBuffer(f)}
-async function match(req){window.LAST=req;$('#loaderr').textContent='';drop.innerHTML='<strong>Looking for your songs…</strong>'+($('#libinfo').textContent.includes('first time')?'<br><span class="small">(waiting for the library to finish reading - only slow the very first time)</span>':'');
+async function match(req,keep){window.LAST=req;$('#loaderr').textContent='';drop.innerHTML='<strong>Looking for your songs…</strong>'+($('#libinfo').textContent.includes('first time')?'<br><span class="small">(waiting for the library to finish reading - only slow the very first time)</span>':'');
  const res=await api('/api/match',{...req,prefer:$('#prefer').value});
  drop.innerHTML=`<strong>${esc(LISTNAME)}</strong> loaded. Drop another file to replace it.`;
  if(res.error){$('#loaderr').textContent=res.error;return}
+ if(!keep&&req!==window.PREV)for(const k in SOUL)delete SOUL[k];window.PREV=req;
  RESULTS=res.results.map(r=>({...r,checked:r.status==='found'||r.status==='guess'}));FILTER=RESULTS.some(r=>r.status==='missing')?null:null;render();
  $('#results').classList.remove('hidden');$('#copycard').classList.remove('hidden');$('#done').innerHTML='';$('#progress').classList.add('hidden');showMode();checkCopied()}
 function fileCell(r,i){
  if(!r.file){let h=`<span class="tag missing">NOT FOUND</span>`;
   if(r.suggestions.length){h+=`<div class="sugg"><span class="small">Did you mean:</span>`+r.suggestions.map((s,k)=>`<a data-i="${i}" data-s="${k}">${esc(s.rel)}</a>`).join('')+`</div>`}
-  h+=`<div class="sugg"><a data-search="${i}">Search the library myself…</a></div>`;return h}
+  h+=`<div class="sugg"><a data-search="${i}">Search the library myself…</a></div>`;return h+soulBlock(i)}
  const f=r.file;let h=`<span class="tag ${r.status}">${{found:'FOUND',guess:'BEST GUESS',version:'OTHER VERSION ONLY'}[r.status]}</span> <b>${esc(f.title)}</b> <span class="small">by ${esc(f.artist)}</span><span class="fmt">${esc(f.ext.toUpperCase())}</span>`
  +` <button class="play" data-play="${esc(f.path)}" title="Listen">▶</button><div class="path">${esc(f.rel)}</div>`;
  if(r.note)h+=`<div class="note">${esc(r.note)}</div>`;
  if(r.alternatives.length){h+=`<div class="sugg"><select data-alt="${i}"><option value="">${r.alternatives.length} other version${r.alternatives.length>1?'s':''} in your library…</option>`+r.alternatives.map((a,k)=>`<option value="${k}">${esc(a.rel)}</option>`).join('')+`</select></div>`}
- return h}
+ return h+(r.status==='version'?soulBlock(i):'')}
 function render(){
  const c={found:0,guess:0,version:0,missing:0,copied:0};RESULTS.forEach(r=>r.copied?c.copied++:c[r.status]++);
  $('#summary').innerHTML=(c.found||!c.copied?`<span class="pill ok ${FILTER==='found'?'active':''}" data-f="found">✓ ${c.found} ${c.copied?'new ':''}found</span>`:'')+
@@ -263,7 +318,7 @@ function render(){
   (c.missing?`<span class="pill bad ${FILTER==='missing'?'active':''}" data-f="missing">✕ ${c.missing} not found</span>`:'')+
   (c.copied?`<span class="pill ok ${FILTER==='copied'?'active':''}" data-f="copied" style="opacity:.75" title="Already copied to ${PLACE()} on an earlier run. Click to see them (tick one to copy it again).">✓ ${c.copied} already ${usbMode()?'on the stick':'copied'}</span>`:'')+
   `<span class="small" style="align-self:center">of ${RESULTS.length} songs on your list</span>`;
- $('#dlmissing').classList.toggle('hidden',!(c.missing||c.version));$('#dltip').classList.toggle('hidden',!(c.missing||c.version));
+ $('#dlmissing').classList.toggle('hidden',!(c.missing||c.version));soulButtons();$('#dltip').classList.toggle('hidden',!(c.missing||c.version));
  $('#filterinfo').textContent=FILTER==='copied'?`These were already copied to ${PLACE()}. Tick one to copy it again.`:FILTER?'Showing only one group. Click it again to show all.':(c.missing?'Songs that weren\'t found are shown in red. Click a suggestion to use it instead.':'')+(c.copied?' Already-copied songs are hidden.':'');
  const order={missing:0,guess:1,found:2};
  const rows=RESULTS.map((r,i)=>[r,i]).filter(([r])=>FILTER==='copied'?r.copied:(!r.copied&&(!FILTER||r.status===FILTER)));
@@ -275,9 +330,15 @@ function render(){
 $('#summary').onclick=e=>{const f=e.target.closest('[data-f]');if(!f)return;FILTER=FILTER===f.dataset.f?null:f.dataset.f;render()};
 $('#all').onchange=e=>{RESULTS.forEach(r=>{if(r.file&&(FILTER==='copied'?r.copied:(!r.copied&&(!FILTER||r.status===FILTER))))r.checked=e.target.checked});render()};
 $('#tbody').onchange=e=>{const t=e.target;
+ if(t.dataset.soulpick!=null){const S=SOUL[t.dataset.soulpick];S.pick=+t.value;S.want=true;render();return}
+ if(t.dataset.soulwant!=null){SOUL[t.dataset.soulwant].want=t.checked;soulButtons();return}
  if(t.dataset.c!=null){RESULTS[t.dataset.c].checked=t.checked;render()}
  if(t.dataset.alt!=null&&t.value!==''){const r=RESULTS[t.dataset.alt];const a=r.alternatives.splice(+t.value,1)[0];r.alternatives.unshift(r.file);r.file=a;r.status='found';r.note='';r.checked=true;render()}};
 $('#tbody').onclick=async e=>{const t=e.target;
+ if(t.dataset.soul!=null){findOnSoulseek([+t.dataset.soul]);return}
+ if(t.dataset.soulretry!=null){const i=+t.dataset.soulretry,D=downFor(RESULTS[i]);if(D)D.dismissed=true;const S=SOUL[i];
+  if(S&&S.cands){S.failed=D&&D.gone?'slskd no longer lists that download.':'That download didn\'t work.';S.cands=S.cands.filter(c=>!(D&&c.username===D.username&&c.filename===D.filename));S.pick=0;S.want=!!(S.cands[0]&&S.cands[0].good);
+   if(!S.cands.length){findOnSoulseek([i]);return}}else findOnSoulseek([i]);render();return}
  if(t.dataset.play){const au=$('#audio');const src='/api/play?path='+encodeURIComponent(t.dataset.play);if(au.dataset.p===t.dataset.play&&!au.paused){au.pause();t.textContent='▶';return}
   document.querySelectorAll('.play').forEach(b=>b.textContent='▶');au.src=src;au.dataset.p=t.dataset.play;au.play();t.textContent='❚❚';au.onended=()=>t.textContent='▶';return}
  if(t.dataset.s!=null){const r=RESULTS[t.dataset.i];r.file=r.suggestions[t.dataset.s];r.alternatives=r.suggestions.filter((_,k)=>k!=t.dataset.s);r.status='found';r.note='you picked this';r.checked=true;render();return}
@@ -316,6 +377,133 @@ $('#go').onclick=async()=>{const dest=$('#dest').value.trim();if(!dest){$('#dest
   if(j.errors.length)h+=`<div class="banner bad"><b>${j.errors.length} couldn't be copied:</b><br>`+j.errors.map(e=>esc(e.src)+'<br><span class="small">'+esc(e.msg)+'</span>').join('<br>')+'</div>';
   if(miss)h+=`<div class="banner bad">${miss} song${miss>1?'s were':' was'} not in your library (or only in a different version). Use the download button above to save the list.</div>`;
   $('#done').innerHTML=h;$('#go').disabled=false};tick()};
+// ---- Soulseek (through the user's slskd)
+// SOUL: per row of the current list -> {job, state, cands, pick, want, error, failed}
+// DOWNS: every download dubplate asked slskd for (kept across lists and re-matches) -> watched
+const SOUL={},DOWNS=[];
+const soulRows=()=>RESULTS.map((r,i)=>[r,i]).filter(([r])=>r.status==='missing'||r.status==='version');
+const mb=n=>n>=1048576?(n/1048576).toFixed(1)+' MB':Math.round(n/1024)+' KB';
+const dur=s=>s?`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`:'';
+const songKey=r=>{const a=r.ask||{};return (a.artist+'|'+a.title+'|'+a.album).toLowerCase()};
+const downFor=r=>DOWNS.find(d=>d.song===songKey(r)&&!d.dismissed);
+function candLine(c){return `<span class="badge ${c.good?'good':c.other_version?'warn':''}">${c.good?'exact':c.other_version?'other version':'close'}</span><span class="badge">${esc(c.quality)}</span>`+
+ ` <b>${esc(c.name)}</b> <span class="small">· ${mb(c.size)}${c.seconds?' · '+dur(c.seconds):''} · from ${esc(c.username)} · ${c.free_slot?'can send now':'queue '+c.queue}</span>`}
+function soulBlock(i){const r=RESULTS[i],D=downFor(r);
+ if(D)return `<div class="soul">${downLine(D,i)}</div>`;
+ const S=SOUL[i];
+ if(!S)return INFO&&INFO.soulseek?`<div class="sugg"><a data-soul="${i}">🔎 Find on Soulseek</a></div>`:'';
+ if(S.state==='waiting'||S.state==='searching')return `<div class="soul">🔎 ${S.state==='searching'?'Searching Soulseek…':'Waiting to search…'} <span class="small">(${esc(S.query||'')})</span></div>`;
+ if(S.state==='error')return `<div class="soul" style="color:var(--bad)">Soulseek: ${esc(S.error)} <a data-soul="${i}">Try again</a></div>`;
+ if(!S.cands.length)return `<div class="soul">Nothing on Soulseek right now <span class="small">(searched “${esc(S.query)}”)</span>. <a data-soul="${i}">Search again</a></div>`;
+ const c=S.cands[S.pick];
+ return `<div class="soul">${S.failed?`<div style="color:var(--bad);margin-bottom:4px">✕ ${esc(S.failed)} Pick another file below and download again.</div>`:''}<label class="pickline"><input type="checkbox" data-soulwant="${i}" ${S.want?'checked':''}><span>${candLine(c)}<div class="path">${esc(c.folder)}</div></span></label>`+
+  (S.cands.length>1?`<select data-soulpick="${i}">`+S.cands.map((x,k)=>`<option value="${k}" ${k===S.pick?'selected':''}>${x.good?'✓':x.other_version?'≠':'~'} ${esc(x.quality)} · ${esc(x.name)} · ${mb(x.size)} · ${esc(x.username)}${x.free_slot?'':' (queue '+x.queue+')'}</option>`).join('')+`</select>`:'')+
+  (!c.good?`<div class="note">${c.other_version?'This is a different version than the one on your list.':'Not an exact match - check it before downloading.'}</div>`:'')+` <a data-soul="${i}" class="small">Search again</a></div>`}
+function downLine(D,i){const st=D.state||'';
+ if(st.includes('Succeeded'))return '✓ Downloaded'+(D.found?' and found in your library':(D.looked?' - <span style="color:var(--warn)">but not found in your library folders</span> (see the message above)':' - looking for it in your library…'));
+ if(D.gone)return `<span style="color:var(--bad)">✕ slskd no longer lists this download.</span> <a data-soulretry="${i}">Choose another file</a>`;
+ if(st.startsWith('Completed'))return `<span style="color:var(--bad)">✕ Download ${esc((st.split(',')[1]||'failed').trim().toLowerCase())}.</span> <a data-soulretry="${i}">Choose another file</a>`;
+ if(st.includes('InProgress'))return `⬇ Downloading… ${Math.round(D.percent||0)}%`;
+ return `⏳ Waiting in ${esc(D.username)}'s queue${D.place?' (#'+D.place+')':''}`}
+function soulButtons(){const rows=soulRows(),todo=rows.filter(([r,i])=>!SOUL[i]&&!downFor(r)),want=Object.entries(SOUL).filter(([i,S])=>S.want&&S.cands&&S.cands.length&&RESULTS[i]&&!downFor(RESULTS[i]));
+ const b=$('#soulall');b.classList.toggle('hidden',!rows.length);$('#soultip').classList.toggle('hidden',!rows.length);
+ b.textContent=INFO&&INFO.soulseek?(todo.length?`🔎 Find ${todo.length} on Soulseek`:'🔎 Search Soulseek again'):'🔎 Find missing songs on Soulseek…';
+ $('#soulbar').classList.toggle('hidden',!want.length&&!$('#soulmsg').textContent);
+ $('#souldl').classList.toggle('hidden',!want.length);$('#souldl').textContent=`⬇ Download ${want.length} from Soulseek`}
+$('#soulall').onclick=()=>{if(!(INFO&&INFO.soulseek)){openSettings('Connect your slskd below to look for missing songs on Soulseek.');return}
+ const free=soulRows().filter(([r])=>!downFor(r)),todo=free.filter(([,i])=>!SOUL[i]);findOnSoulseek((todo.length?todo:free).map(([,i])=>i))};
+async function findOnSoulseek(rows){rows=rows.filter(i=>RESULTS[i]&&!downFor(RESULTS[i]));if(!rows.length)return;
+ const songs=rows.map(i=>({key:String(i),...splitLabel(RESULTS[i])}));
+ rows.forEach(i=>SOUL[i]={state:'waiting',cands:[],pick:0,want:false});render();
+ let res;try{res=await api('/api/slskd/search',{songs,prefer:$('#prefer').value})}catch(e){res={error:'dubplate didn\'t answer.'}}
+ if(res.error){rows.forEach(i=>SOUL[i]={state:'error',error:res.error,cands:[]});render();return}
+ rows.forEach(i=>SOUL[i].job=res.job);
+ const poll=async()=>{let j;try{j=await api('/api/slskd/search/'+res.job)}catch(e){j={error:'lost'}}
+  if(j.error){for(const i of rows)if(SOUL[i]&&SOUL[i].job===res.job&&SOUL[i].state!=='done')SOUL[i]={state:'error',error:'the search was lost (dubplate restarted?).',cands:[]};render();return}
+  for(const [k,it] of Object.entries(j.items)){const S=SOUL[k];if(!S||S.job!==res.job)continue; // an older search: not for this row any more
+   S.state=it.state;S.query=it.query;S.error=it.error;
+   if(it.state==='done'&&!S.got){S.got=true;S.cands=it.candidates;S.pick=0;S.want=!!(it.candidates[0]&&it.candidates[0].good)}}
+  render();if(!j.done)setTimeout(poll,1500)};poll()}
+// what to search for: the artist/title dubplate read from the list row
+function splitLabel(r){const q=r.ask||{};if(q.title)return {artist:q.artist||'',title:q.title,album:q.album||''};
+ const p=String(r.label).split(/\s+[-–—]\s+/);return p.length>1?{artist:p[0],title:p[p.length-1],album:''}:{artist:'',title:String(r.label),album:''}}
+$('#souldl').onclick=async()=>{const want=Object.entries(SOUL).filter(([i,S])=>S.want&&S.cands&&S.cands.length&&RESULTS[i]&&!downFor(RESULTS[i]));
+ const items=want.map(([,S])=>{const c=S.cands[S.pick];return {username:c.username,filename:c.filename,size:c.size}});
+ $('#souldl').disabled=true;$('#soulmsg').textContent='Asking slskd to download…';
+ let r;try{r=await api('/api/slskd/download',{items})}catch(e){r={error:'dubplate didn\'t answer.'}}$('#souldl').disabled=false;
+ if(r.error){$('#soulmsg').innerHTML=`<span style="color:var(--bad)">${esc(r.error)}</span>`;return}
+ let ok=0,bad=[];want.forEach(([i,S],k)=>{const res=r.results[k]||{},c=S.cands[S.pick];
+  if(res.ok){ok++;DOWNS.push({song:songKey(RESULTS[i]),username:c.username,filename:c.filename,state:'Queued',percent:0,since:Date.now()});S.want=false;S.failed=null}
+  else bad.push(`${RESULTS[i].label}: ${res.error}`)});
+ $('#soulmsg').innerHTML=(ok?`${ok} queued in slskd. Progress shows under each song; as each one finishes, dubplate looks for it in your library.`:'')+
+  (bad.length?`<br><span style="color:var(--bad)">Couldn't queue ${bad.length}: ${bad.map(esc).join('; ')}</span>`:'');render();watchTransfers()};
+let WATCH=null,LOOKING=false;
+async function watchTransfers(){clearTimeout(WATCH);const active=DOWNS.filter(D=>!D.done);if(!active.length)return;
+ let r;try{r=await api('/api/slskd/transfers')}catch(e){r={error:'x'}}
+ if(!r.error)for(const D of active){const t=r.transfers.find(t=>t.username===D.username&&t.filename===D.filename);
+  if(t){Object.assign(D,{state:t.state,percent:t.percent,place:t.place,seen:true})}
+  else if(D.seen||Date.now()-D.since>60000){D.gone=true;D.done=true}} // removed in slskd, or never showed up
+ for(const D of active)if((D.state||'').startsWith('Completed'))D.done=true;
+ render();
+ // as soon as some have finished, look for them (don't wait for one stuck in someone's queue)
+ const fresh=DOWNS.filter(D=>(D.state||'').includes('Succeeded')&&!D.looked);
+ if(fresh.length&&!LOOKING){LOOKING=true;fresh.forEach(D=>D.looked=true);try{await afterDownloads(fresh)}finally{LOOKING=false}}
+ if(DOWNS.some(D=>!D.done))WATCH=setTimeout(watchTransfers,2000)}
+// downloads finished: read the library again, then look for the list's songs once more
+async function afterDownloads(fresh){$('#soulmsg').textContent='Downloads finished. Reading your library again…';
+ await api('/api/rescan',{}); // the "scanning" flag is set before this answers
+ for(;;){const i=await api('/api/info');if(!i.scanning)break;await new Promise(ok=>setTimeout(ok,1000))}
+ if(window.LAST)await match(window.LAST,true);
+ let found=0,still=0;for(const D of fresh){const r=RESULTS.find(r=>songKey(r)===D.song);
+  if(r&&(r.status==='found'||r.status==='guess')){D.found=true;found++}else still++}
+ $('#soulmsg').innerHTML=(found?`✓ ${found} downloaded song${found>1?'s are':' is'} now in your library and ready to copy.`:'')+
+  (still?` <span style="color:var(--warn)">${still} downloaded but not found in your library folders. Is slskd's download folder one of them? <a href="#" id="soulsettings">⚙ Settings → Also look in</a></span>`:'');
+ const ss=$('#soulsettings');if(ss)ss.onclick=e=>{e.preventDefault();openSettings()};render()}
+// ---- folder pickers (Settings)
+async function pick(box,start,useText,onUse){const r=await api('/api/ls?path='+encodeURIComponent(start));box.style.display='block';
+ box.innerHTML=(r.parent!=null?`<div data-p="${esc(r.parent)}">⬆ Up one level</div>`:'')+(r.path?`<div class="small" style="cursor:default">In <b>${esc(r.path)}</b> · click a folder to open it</div><div data-use="${esc(r.path)}" style="color:var(--acc)">✓ ${useText}</div>`:`<div class="small" style="cursor:default">This PC: pick a drive</div>`)+(r.error?`<div class="small" style="color:var(--bad)">${esc(r.error)}</div>`:'')+r.dirs.map(d=>`<div data-p="${esc(d.path)}">📁 ${esc(d.name)}</div>`).join('');
+ box.onclick=e=>{const d=e.target.closest('div');if(!d)return;if(d.dataset.use){box.style.display='none';onUse(d.dataset.use)}else if(d.dataset.p!=null)pick(box,d.dataset.p,useText,onUse)}}
+// ---- settings
+let SET=null,EXTRAS=[],SLSKD=null;
+function drawExtras(){$('#extras').innerHTML=EXTRAS.length?EXTRAS.map((f,k)=>`<div class="extra ${f.exists===false?'missing':''}"><span>📁 ${esc(f.path)}${f.exists===false?' (not found on this computer)':''}</span><button data-rmextra="${k}" title="Stop looking in this folder (nothing is deleted)">Remove</button></div>`).join(''):'<p class="small" style="margin:0 0 6px">No other folders.</p>';
+ const dl=SLSKD&&SLSKD.downloads_here,has=dl&&EXTRAS.some(f=>f.path===dl);
+ $('#addslskdfolder').classList.toggle('hidden',!dl||has);if(dl)$('#addslskdfolder').textContent='+ Add slskd’s download folder';
+ $('#slskdfolderinfo').textContent=SLSKD&&SLSKD.downloads&&!SLSKD.downloads_here?`slskd saves downloads to “${SLSKD.downloads}”, which isn't a folder on this computer (slskd probably runs in Docker, where folders have other names). Use “+ Add a folder…” to pick the same folder as this computer sees it.`:(dl&&!has?`slskd saves downloads to ${dl}. Add it so songs you download are found.`:'')}
+async function openSettings(msg){SET=await api('/api/settings');$('#setcard').classList.remove('hidden');$('#set_music').value=SET.music;EXTRAS=SET.extra_folders;
+ $('#set_url').value=SET.slskd.url;$('#set_key').value='';keyState();
+ $('#set_music').disabled=$('[data-browse=set_music]').disabled=!!SET.music_from_cli;
+ $('#musicnote').textContent=SET.music_from_cli?'dubplate was started with --music, so that folder is used. Start it without --music to choose here.':'';
+ $('#setmsg').textContent=msg||'';$('#slskdstatus').textContent='';drawExtras();$('#setcard').scrollIntoView({behavior:'smooth'});if(SET.slskd.key_set)testSlskd(true)}
+$('#opensettings').onclick=e=>{e.preventDefault();openSettings()};$('#setclose').onclick=()=>$('#setcard').classList.add('hidden');
+document.querySelector('[data-browse=set_music]').onclick=()=>pick($('#br_set_music'),$('#set_music').value||'~','Use this folder',f=>$('#set_music').value=f);
+$('#addextra').onclick=()=>pick($('#br_extra'),'~','Add this folder',f=>{if(!EXTRAS.some(x=>x.path===f))EXTRAS.push({path:f,exists:true});drawExtras()});
+$('#addslskdfolder').onclick=()=>{EXTRAS.push({path:SLSKD.downloads_here,exists:true});drawExtras()};
+$('#extras').onclick=e=>{const b=e.target.closest('[data-rmextra]');if(b){EXTRAS.splice(+b.dataset.rmextra,1);drawExtras()}};
+$('#showkey').onclick=()=>{const k=$('#set_key');k.type=k.type==='password'?'text':'password';$('#showkey').textContent=k.type==='password'?'Show':'Hide'};
+function keyYaml(k){$('#keyyaml').textContent=`web:\n  authentication:\n    api_keys:\n      dubplate:\n        key: ${k||'(your key)'}\n        role: readwrite`}
+$('#set_key').addEventListener('input',()=>keyYaml($('#set_key').value.trim()));
+$('#makekey').onclick=()=>{const a=new Uint8Array(16);crypto.getRandomValues(a);const k=[...a].map(x=>x.toString(16).padStart(2,'0')).join('');$('#set_key').value=k;$('#set_key').type='text';$('#showkey').textContent='Hide';keyYaml(k)};
+$('#copyyaml').onclick=async()=>{try{await navigator.clipboard.writeText($('#keyyaml').textContent);$('#copymsg').textContent='Copied.'}catch(e){$('#copymsg').textContent='Select the lines and copy them by hand.'}};
+function keyState(){$('#set_key').placeholder=SET.slskd.key_set?'saved - type a new one to replace it':'paste or make a key';$('#disconnect').classList.toggle('hidden',!SET.slskd.key_set)}
+$('#disconnect').onclick=async()=>{const r=await api('/api/settings',{slskd_key:''});if(r.error){$('#setmsg').textContent=r.error;return}SET=r;keyState();SLSKD=null;drawExtras();
+ $('#slskdstatus').textContent='Disconnected: the key was removed from dubplate.';await info();if(RESULTS.length)render()};
+async function testSlskd(quiet){if(!quiet)$('#slskdstatus').textContent='Testing…';const r=await api('/api/slskd/test',{url:$('#set_url').value.trim(),key:$('#set_key').value.trim()});
+ if(r.error){SLSKD=null;if(!quiet)$('#slskdstatus').innerHTML=`<span style="color:var(--bad)">✕ ${esc(r.error)}</span>`;else $('#slskdstatus').textContent=''}
+ else{SLSKD=r;$('#slskdstatus').innerHTML=`<span style="color:var(--ok)">✓ Connected to slskd ${esc(r.version)}</span>`+(r.logged_in?` · logged in to Soulseek${r.username?' as '+esc(r.username):''}`:' · <span style="color:var(--warn)">not logged in to Soulseek right now (check slskd)</span>')}
+ drawExtras()}
+$('#testslskd').onclick=()=>testSlskd();
+$('#setsave').onclick=async()=>{$('#setmsg').textContent='Saving…';const body={};
+ const m=$('#set_music').value.trim();if(m!==SET.music)body.music=m;
+ const ex=EXTRAS.map(f=>f.path);if(JSON.stringify(ex)!==JSON.stringify(SET.extra_folders.map(f=>f.path)))body.extra_folders=ex;
+ const u=$('#set_url').value.trim();if(u!==SET.slskd.url)body.slskd_url=u;
+ const k=$('#set_key').value.trim();if(k)body.slskd_key=k;
+ if(!Object.keys(body).length){$('#setmsg').textContent='Nothing changed.';return}
+ const r=await api('/api/settings',body);if(r.error){$('#setmsg').innerHTML=`<span style="color:var(--bad)">${esc(r.error)}</span>`;return}
+ SET=r;EXTRAS=r.extra_folders;drawExtras();$('#set_key').value='';keyState();
+ $('#setmsg').innerHTML='<span style="color:var(--ok)">✓ Saved.</span> Reading the library again…';await info();if(RESULTS.length)render();
+ const done=async()=>{const i=await api('/api/info');if(i.scanning)return setTimeout(done,1000);info();
+  $('#setmsg').innerHTML=`<span style="color:var(--ok)">✓ Saved.</span> ${i.count.toLocaleString()} songs in your library folders.`+(window.LAST?' <a href="#" id="rematch">Look for your list again</a>':'');
+  const rm=$('#rematch');if(rm)rm.onclick=e=>{e.preventDefault();match(window.LAST)}};setTimeout(done,800)};
 // ---- tooltips: hover or keyboard focus shows them, a tap toggles them (phones)
 const tipbox=$('#tipbox');let TIPON=null,TIPAT=0;
 function showTip(el){const t=el.dataset.tip;if(!t)return;if(TIPON!==el)TIPAT=Date.now();if(TIPON&&TIPON!==el)TIPON.classList.remove('on');

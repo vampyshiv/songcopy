@@ -29,7 +29,31 @@ pub fn save_setting(key: &str, value: Value) {
     let mut s = load_settings();
     s.insert(key.to_string(), value);
     if let Ok(j) = serde_json::to_vec_pretty(&Value::Object(s)) {
-        let _ = paths::write_atomic(&settings_file(), &j);
+        let _ = paths::write_private(&settings_file(), &j);
+    }
+}
+
+/// a list of strings from the settings (e.g. "extra_folders")
+pub fn setting_list(key: &str) -> Vec<String> {
+    load_settings()
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// remove a setting
+pub fn remove_setting(key: &str) {
+    let _g = SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut s = load_settings();
+    if s.remove(key).is_some() {
+        if let Ok(j) = serde_json::to_vec_pretty(&Value::Object(s)) {
+            let _ = paths::write_private(&settings_file(), &j);
+        }
     }
 }
 

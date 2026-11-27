@@ -32,6 +32,28 @@ pub fn junk_folder(name: &str) -> bool {
         )
 }
 
+/// the name shown in front of songs from an "also look in" folder: the folder's name ("Drive E"
+/// for a whole drive), made unique when two folders have the same name
+fn unique_label(root: &str, taken: &[String]) -> String {
+    let trimmed = root.trim_end_matches(['/', '\\']);
+    let mut l = basename(trimmed).to_string();
+    if l.is_empty() || l.ends_with(':') {
+        l = match trimmed.chars().next() {
+            Some(d) if trimmed.len() <= 2 && d.is_ascii_alphabetic() => {
+                format!("Drive {}", d.to_ascii_uppercase())
+            }
+            _ => "other folder".to_string(),
+        };
+    }
+    let mut out = l.clone();
+    let mut k = 2;
+    while taken.contains(&out) {
+        out = format!("{l} ({k})");
+        k += 1;
+    }
+    out
+}
+
 /// clears the "scanning" flag however a scan ends, even if it fails, so the library can
 /// always be read again
 struct ScanFlag<'a>(&'a AtomicBool);
@@ -88,7 +110,7 @@ pub struct Track {
 }
 
 impl Track {
-    fn fill_norms(&mut self) {
+    pub fn fill_norms(&mut self) {
         self.n_artist = norm(&self.artist);
         self.n_title = norm(&self.title);
         self.n_album = norm(&self.album);
@@ -155,8 +177,17 @@ pub struct MatchResult {
     pub alternatives: Vec<PubFile>,
     pub suggestions: Vec<PubFile>,
     pub note: String,
+    /// the artist / title / album it looked for (after reading the list row), e.g. for Soulseek
+    pub ask: Ask,
     #[serde(skip)]
     pub n: usize,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct Ask {
+    pub artist: String,
+    pub title: String,
+    pub album: String,
 }
 
 #[derive(Default)]
@@ -168,9 +199,14 @@ struct Data {
 }
 
 pub struct Library {
-    pub root: String,
+    /// the main music folder (changeable in Settings)
+    root: RwLock<String>,
+    /// "also look in" folders (e.g. where a downloader saves songs), chosen by the user
+    extra: RwLock<Vec<String>>,
     data: RwLock<Data>,
     pub scanning: AtomicBool,
+    /// asked to scan again while a scan was running
+    again: AtomicBool,
     pub progress: AtomicUsize,
     ready: (Mutex<bool>, Condvar),
 }
@@ -180,18 +216,50 @@ type Scored<'a> = Vec<(f64, &'a Track, u32)>;
 /// The current library contents, for matching (held for the duration of one request).
 pub struct View<'a> {
     d: std::sync::RwLockReadGuard<'a, Data>,
-    root: &'a str,
+    root: String,
 }
 
 impl Library {
     pub fn new(root: &str) -> Library {
         Library {
-            root: abspath(&expanduser(root)),
+            root: RwLock::new(abspath(&expanduser(root))),
+            extra: RwLock::new(Vec::new()),
             data: RwLock::new(Data::default()),
             scanning: AtomicBool::new(false),
+            again: AtomicBool::new(false),
             progress: AtomicUsize::new(0),
             ready: (Mutex::new(false), Condvar::new()),
         }
+    }
+
+    /// the main music folder
+    pub fn root(&self) -> String {
+        self.root.read().unwrap().clone()
+    }
+
+    /// change the main music folder (takes effect with the next scan)
+    pub fn set_root(&self, root: &str) {
+        *self.root.write().unwrap() = abspath(&expanduser(root));
+    }
+
+    /// set the "also look in" folders (takes effect with the next scan)
+    pub fn set_extra(&self, folders: &[String]) {
+        let root = self.root();
+        let mut v: Vec<String> = Vec::new();
+        for f in folders {
+            let f = abspath(&expanduser(f));
+            if f != root && !v.contains(&f) && !f.is_empty() {
+                v.push(f);
+            }
+        }
+        *self.extra.write().unwrap() = v;
+    }
+
+    /// every folder the library is read from: the main one first
+    pub fn roots(&self) -> Vec<String> {
+        std::iter::once(self.root())
+            .chain(self.extra.read().unwrap().iter().cloned())
+            .collect()
     }
 
     pub fn len(&self) -> usize {
@@ -216,17 +284,38 @@ impl Library {
     pub fn view(&self) -> View<'_> {
         View {
             d: self.data.read().unwrap(),
-            root: &self.root,
+            root: self.root(),
         }
     }
 
-    /// read every audio file under root (depth first, sorted, like the Python version)
-    fn walk(&self, mut each: impl FnMut(String, String, u64)) {
-        let mut stack: Vec<(String, String)> = vec![(self.root.clone(), String::new())];
+    /// read every audio file in every library folder (depth first, sorted). Songs from the
+    /// "also look in" folders get that folder's name in front of their path, so it's clear where
+    /// they are. A folder that's inside another one is only read once.
+    fn walk(&self, roots: &[String], mut each: impl FnMut(String, String, &str, u64)) {
+        let mut visited: HashSet<std::path::PathBuf> = HashSet::new();
+        let mut labels: Vec<String> = Vec::new();
+        for (i, root) in roots.iter().enumerate() {
+            let label = if i == 0 {
+                String::new()
+            } else {
+                unique_label(root, &labels)
+            };
+            labels.push(label.clone());
+            self.walk_root(root, &label, &mut visited, &mut each);
+        }
+    }
+
+    fn walk_root(
+        &self,
+        root: &str,
+        label: &str,
+        visited: &mut HashSet<std::path::PathBuf>,
+        each: &mut impl FnMut(String, String, &str, u64),
+    ) {
+        let mut stack: Vec<(String, String)> = vec![(root.to_string(), String::new())];
         // folders already read (by their real location): a symlink pointing back up the tree
         // would otherwise list the same songs again and again
-        let mut visited: HashSet<std::path::PathBuf> = HashSet::new();
-        let real_root = std::fs::canonicalize(&self.root).ok();
+        let real_root = std::fs::canonicalize(root).ok();
         while let Some((dir, rel)) = stack.pop() {
             if let Ok(real) = std::fs::canonicalize(&dir) {
                 if !visited.insert(real) {
@@ -273,77 +362,69 @@ impl Library {
                     }
                     subdirs.push((join(&dir, &name), r));
                 } else if is_audio(&name) {
-                    each(join(&self.root, &r), r, meta.len());
+                    each(join(root, &r), r, label, meta.len());
                 }
             }
             stack.extend(subdirs.into_iter().rev());
         }
     }
 
+    /// Read the library (all its folders). If a scan is already running, it's asked to go
+    /// round once more instead (so a folder added in Settings meanwhile isn't missed).
     pub fn scan(&self, mut on_progress: impl FnMut(usize)) -> usize {
-        // one scan at a time: if one is already running, it will bring everything up to date
         if self
             .scanning
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_err()
         {
+            self.again.store(true, Ordering::SeqCst);
             return self.len();
         }
-        let _flag = ScanFlag(&self.scanning);
-        self.progress.store(0, Ordering::SeqCst);
-        let mut files: Vec<Track> = Vec::new();
-        self.walk(|full, rel, size| {
-            let name = basename(&rel).to_string();
-            let (stem, ext) = splitext(&name);
-            let parts: Vec<&str> = rel.split(SEP).collect();
-            let np = parts.len();
-            let (artist, album, title) = if let Some(m) = FNAME_RE.captures(stem) {
-                (
-                    m["artist"].to_string(),
-                    m["album"].to_string(),
-                    m["title"].to_string(),
-                )
-            } else {
-                // "Artist - Title" loose file, or something else
-                let bits: Vec<&str> = stem.split(" - ").collect();
-                let title = LEADING_TRACKNO
-                    .replace(bits[bits.len() - 1], "")
-                    .to_string();
-                let artist = if bits.len() > 1 {
-                    bits[0].to_string()
-                } else if np >= 3 {
-                    parts[np - 3].to_string()
-                } else {
-                    String::new()
-                };
-                let album = if np >= 3 {
-                    parts[np - 2].to_string()
-                } else {
-                    String::new()
-                };
-                (artist, YEAR_SUFFIX.replace(&album, "").to_string(), title)
-            };
-            files.push(Track {
-                path: full,
-                ext: ext.to_lowercase().trim_start_matches('.').to_string(),
-                name,
-                n_dirartist: if np >= 3 {
-                    norm(parts[np - 3])
-                } else {
-                    String::new()
-                },
-                rel,
-                artist,
-                album,
-                title,
-                size,
-                ..Default::default()
-            });
-            self.progress.store(files.len(), Ordering::Relaxed);
-            on_progress(files.len());
+        self.scan_running(&mut on_progress)
+    }
+
+    /// start a scan in the background; the "scanning" flag is set before this returns, so a
+    /// page asking straight after sees that the library is being read
+    pub fn start_scan(self: &std::sync::Arc<Self>) {
+        if self
+            .scanning
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            self.again.store(true, Ordering::SeqCst);
+            return;
+        }
+        let me = self.clone();
+        std::thread::spawn(move || {
+            me.scan_running(&mut |_| {});
         });
-        self.install(files, None);
-        self.save_cache();
+    }
+
+    fn scan_running(&self, on_progress: &mut dyn FnMut(usize)) -> usize {
+        let _flag = ScanFlag(&self.scanning);
+        loop {
+            self.again.store(false, Ordering::SeqCst);
+            self.progress.store(0, Ordering::SeqCst);
+            let roots = self.roots();
+            let mut files: Vec<Track> = Vec::new();
+            self.walk(&roots, |full, rel, label, size| {
+                // the song is read from its path inside its own folder ("Album/01 - Title.flac"),
+                // and shown with that folder's name in front ("downloads/Album/01 - Title.flac")
+                let mut t = parse_track(full, rel, size);
+                if !label.is_empty() {
+                    t.rel = format!("{label}{SEP}{}", t.rel);
+                }
+                files.push(t);
+                self.progress.store(files.len(), Ordering::Relaxed);
+                on_progress(files.len());
+            });
+            self.install(files, None);
+            self.save_cache(&roots.join("\n"));
+            // folders changed in Settings while reading, or another scan was asked for: go again
+            if self.roots() == roots && !self.again.load(Ordering::SeqCst) {
+                break;
+            }
+        }
         self.len()
     }
 
@@ -381,21 +462,29 @@ impl Library {
 
     // A saved copy of the song list, so the page opens instantly next time (matters on Windows,
     // where reading 25,000 files over the network takes a while). Always refreshed in the background.
+    fn roots_key(&self) -> String {
+        self.roots().join("\n")
+    }
+
     fn cache_file(&self) -> String {
-        let h = sha1_smol::Sha1::from(self.root.as_bytes())
+        let h = sha1_smol::Sha1::from(self.roots_key().as_bytes())
             .digest()
             .to_string();
         join(&paths::app_dir(), &format!("{}.json", &h[..12]))
     }
 
-    fn save_cache(&self) {
+    fn save_cache(&self, key: &str) {
         let d = self.data.read().unwrap();
         let body = serde_json::json!({
-            "root": self.root,
+            "root": key,
             "when": d.scanned_at.map(|t| t.format("%Y-%m-%dT%H:%M:%S%.6f").to_string()),
             "files": d.files,
         });
-        let _ = paths::write_atomic(&self.cache_file(), body.to_string().as_bytes());
+        let h = sha1_smol::Sha1::from(key.as_bytes()).digest().to_string();
+        let _ = paths::write_atomic(
+            &join(&paths::app_dir(), &format!("{}.json", &h[..12])),
+            body.to_string().as_bytes(),
+        );
     }
 
     pub fn load_cache(&self) -> bool {
@@ -411,7 +500,7 @@ impl Library {
         let Ok(c) = serde_json::from_str::<Cache>(&s) else {
             return false;
         };
-        if c.root != self.root || c.files.is_empty() {
+        if c.root != self.roots_key() || c.files.is_empty() {
             return false;
         }
         let when = c
@@ -419,6 +508,57 @@ impl Library {
             .and_then(|w| chrono::NaiveDateTime::parse_from_str(&w, "%Y-%m-%dT%H:%M:%S%.f").ok());
         self.install(c.files, when);
         true
+    }
+}
+
+/// what a file's path says about the song: "Artist - Album - 07 - Title.flac" in
+/// "Artist/Album (Year)/", or loose "Artist - Title.mp3"
+pub fn parse_track(full: String, rel: String, size: u64) -> Track {
+    let name = basename(&rel).to_string();
+    let (stem, ext) = splitext(&name);
+    let parts: Vec<&str> = rel.split(SEP).collect();
+    let np = parts.len();
+    let (artist, album, title) = if let Some(m) = FNAME_RE.captures(stem) {
+        (
+            m["artist"].to_string(),
+            m["album"].to_string(),
+            m["title"].to_string(),
+        )
+    } else {
+        // "Artist - Title" loose file, or something else
+        let bits: Vec<&str> = stem.split(" - ").collect();
+        let title = LEADING_TRACKNO
+            .replace(bits[bits.len() - 1], "")
+            .to_string();
+        let artist = if bits.len() > 1 {
+            bits[0].to_string()
+        } else if np >= 3 {
+            parts[np - 3].to_string()
+        } else {
+            String::new()
+        };
+        let album = if np >= 3 {
+            parts[np - 2].to_string()
+        } else {
+            String::new()
+        };
+        (artist, YEAR_SUFFIX.replace(&album, "").to_string(), title)
+    };
+    Track {
+        path: full,
+        ext: ext.to_lowercase().trim_start_matches('.').to_string(),
+        n_dirartist: if np >= 3 {
+            norm(parts[np - 3])
+        } else {
+            String::new()
+        },
+        name,
+        rel,
+        artist,
+        album,
+        title,
+        size,
+        ..Default::default()
     }
 }
 
@@ -433,15 +573,24 @@ fn album_rank(f: &Track) -> (u8, u32) {
     (u8::from(NOT_ORIGINAL.is_match(parent)), year)
 }
 
-fn same_song(title: &str, f: &Track) -> bool {
+pub fn same_song(title: &str, f: &Track) -> bool {
     let rb = norm(&split_version(title).0);
     !rb.is_empty() && (rb == f.n_base || (rb.chars().count() >= 6 && ratio(&rb, &f.n_base) >= 0.92))
 }
 
 /// 0..1, how well file f matches what was asked for
-fn score(f: &Track, artist: &str, title: &str, album: &str) -> f64 {
-    let (nt, na) = (norm(title), norm(artist));
-    let s_title = if nt.is_empty() {
+pub fn score(f: &Track, artist: &str, title: &str, album: &str) -> f64 {
+    let mut s = 0.65 * title_score(f, title) + 0.35 * artist_score(f, artist);
+    if !album.is_empty() && norm(album) == f.n_album {
+        s += 0.05;
+    }
+    s.min(1.0)
+}
+
+/// 0..1: how well the file's title matches (versions included)
+pub fn title_score(f: &Track, title: &str) -> f64 {
+    let nt = norm(title);
+    if nt.is_empty() {
         0.5
     } else if nt == f.n_title {
         1.0
@@ -464,24 +613,23 @@ fn score(f: &Track, artist: &str, title: &str, album: &str) -> f64 {
             }
         }
         s
-    };
-    let s_art = if na.is_empty() {
-        0.8
-    } else {
-        let fa = &f.n_artist;
-        if na == *fa || na == f.n_dirartist {
-            1.0
-        } else if fa.contains(&na) || na.contains(fa.as_str()) || f.n_dirartist.contains(&na) {
-            0.9
-        } else {
-            ratio(&na, fa)
-        }
-    };
-    let mut s = 0.65 * s_title + 0.35 * s_art;
-    if !album.is_empty() && norm(album) == f.n_album {
-        s += 0.05;
     }
-    s.min(1.0)
+}
+
+/// 0..1: how well the file's artist matches (0.8 when none was asked for)
+pub fn artist_score(f: &Track, artist: &str) -> f64 {
+    let na = norm(artist);
+    if na.is_empty() {
+        return 0.8;
+    }
+    let fa = &f.n_artist;
+    if na == *fa || na == f.n_dirartist {
+        1.0
+    } else if fa.contains(&na) || na.contains(fa.as_str()) || f.n_dirartist.contains(&na) {
+        0.9
+    } else {
+        ratio(&na, fa)
+    }
 }
 
 const NOTE_VERSION: &str =
@@ -598,6 +746,7 @@ impl View<'_> {
             alternatives: vec![],
             suggestions: vec![],
             note: String::new(),
+            ask: Ask::default(),
             n: 0,
         };
 
@@ -611,7 +760,7 @@ impl View<'_> {
         };
         if !p.is_empty() {
             let p2 = expanduser(&p.replace('\\', "/"));
-            for cand in [p2.clone(), join(self.root, p2.trim_start_matches('/'))] {
+            for cand in [p2.clone(), join(&self.root, p2.trim_start_matches('/'))] {
                 if paths::isfile(&cand) && is_audio(&cand) {
                     let ap = abspath(&cand);
                     let f = self
@@ -620,7 +769,7 @@ impl View<'_> {
                         .iter()
                         .find(|x| x.path == ap)
                         .cloned()
-                        .unwrap_or_else(|| file_info(&ap, self.root));
+                        .unwrap_or_else(|| file_info(&ap, &self.root));
                     let scored = vec![(1.0, &f, 0)];
                     Self::finish(&mut res, &scored, "found", "");
                     return res;
@@ -678,6 +827,11 @@ impl View<'_> {
             }
         }
 
+        res.ask = Ask {
+            artist: artist.clone(),
+            title: title.clone(),
+            album: album.clone(),
+        };
         // (words to search for) -> always scored against what was actually asked for
         let base = Some(split_version(&title).0)
             .filter(|b| !b.is_empty())

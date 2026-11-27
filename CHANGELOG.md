@@ -2,6 +2,30 @@
 
 Each version's notes are shown in dubplate's update card before you install it.
 
+## 2.2.0
+
+**Find missing songs on Soulseek.** If you use slskd (a Soulseek client), connect it in the
+new **⚙ Settings**, then click **🔎 Find on Soulseek**:
+
+- dubplate searches for the songs you don't have and **picks the best file for each**. It uses
+  the same rules as for your library, so it **never picks a radio edit when you asked for the
+  Extended Mix**. It prefers lossless, then MP3 320, skips anything under 192 kbps, and
+  prefers people who can send it now.
+- You **check the picks** (other choices are in a menu), then click Download. Nothing
+  downloads until you do.
+- Progress shows under each song. When the downloads finish, dubplate reads your library
+  again and they turn green, ready to copy.
+
+**⚙ Settings** (top of the page):
+
+- **Main music folder**, and **Also look in** for other folders that count as your library:
+  a second drive, or where your downloader saves songs.
+- **Soulseek:** slskd's address and API key, with **Make a key for me** (it shows exactly
+  what to add to slskd) and **Test connection**.
+
+Settings can only be changed on the computer dubplate runs on. Your API key stays on your
+computer.
+
 ## 2.1.1
 
 **Making a USB after copying to your DJ folder now works the way you'd expect.** Step 3 is

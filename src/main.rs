@@ -17,6 +17,7 @@ mod library;
 mod lists;
 mod paths;
 mod server;
+mod slskd;
 #[cfg(test)]
 mod tests;
 mod text;
@@ -164,11 +165,19 @@ fn colours() -> C {
     }
 }
 
+/// the main music folder: --music, else the one chosen in Settings, else (Windows) the music
+/// server's share, else ~/Music
 fn resolve_music(arg: Option<String>) -> String {
-    match arg {
-        Some(m) => m,
-        None if WINDOWS => discover::windows_music_folder(),
-        None => paths::join(&paths::home(), "Music"),
+    if let Some(m) = arg {
+        return m;
+    }
+    if let Some(m) = discover::setting_str("music").filter(|m| paths::isdir(m)) {
+        return m;
+    }
+    if WINDOWS {
+        discover::windows_music_folder()
+    } else {
+        paths::join(&paths::home(), "Music")
     }
 }
 
@@ -222,8 +231,10 @@ fn run(cli: Cli) -> i32 {
                 server::open_browser(&url);
                 return 0;
             }
+            let music_from_cli = cli.music.is_some();
             let music = resolve_music(cli.music);
             server::serve(server::Options {
+                music_from_cli,
                 music,
                 port: a.port,
                 host: a.host,
@@ -250,6 +261,7 @@ fn run(cli: Cli) -> i32 {
 fn match_json(music: &str, prefer: &str) -> i32 {
     use std::io::BufRead;
     let lib = Library::new(music);
+    lib.set_extra(&discover::setting_list("extra_folders"));
     lib.scan(|_| {});
     let view = lib.view();
     let mut out = std::io::stdout().lock();
@@ -333,7 +345,10 @@ fn cli_run(music: &str, list: &str, prefer: &str, strict: bool, copy: Option<Cop
         return 1;
     }
     let lib = Library::new(music);
-    print!("{}Reading your library {} ...{}", c.d, lib.root, c.x);
+    lib.set_extra(&discover::setting_list("extra_folders")); // "also look in" folders from Settings
+                                                             // every folder searched: the main one, plus "also look in" folders from Settings
+    let folders = lib.roots().join(" + ");
+    print!("{}Reading your library {} ...{}", c.d, folders, c.x);
     let _ = std::io::stdout().flush();
     let t0 = std::time::Instant::now();
     let n = lib.scan(|k| {
@@ -350,7 +365,7 @@ fn cli_run(music: &str, list: &str, prefer: &str, strict: bool, copy: Option<Cop
     println!(
         "\r{}Read your library {}: {} songs ({:.1}s){}        ",
         c.d,
-        lib.root,
+        folders,
         paths::thousands(n),
         t0.elapsed().as_secs_f64(),
         c.x
@@ -479,7 +494,7 @@ fn cli_run(music: &str, list: &str, prefer: &str, strict: bool, copy: Option<Cop
             "{}{}NOT FOUND in {} ({}):{}",
             c.r,
             c.b,
-            lib.root,
+            folders,
             missing.len(),
             c.x
         );
