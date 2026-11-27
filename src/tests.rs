@@ -276,11 +276,11 @@ fn remembers_what_was_copied_per_destination() {
 
 #[test]
 fn usb_converts_what_decks_cant_play() {
+    let f = fixture(); // takes the environment lock before looking for ffmpeg
     let (Some(ffmpeg), Some(_)) = copy::ffmpeg_path() else {
         eprintln!("ffmpeg not installed - skipping");
         return;
     };
-    let f = fixture();
     let tone = |out: &str| {
         let ok = std::process::Command::new(&ffmpeg)
             .args([
@@ -354,4 +354,335 @@ fn brings_songcopy_settings_and_memory_along() {
         crate::discover::setting_str("server").as_deref(),
         Some("myserver.local")
     ); // only once
+}
+
+// ---------------------------------------------------------------------------- bug-hunt regressions
+
+#[test]
+fn copies_go_through_a_temp_file_and_never_overwrite() {
+    let f = fixture();
+    let src = join(&f.root, &LIBRARY[0].replace('/', &paths::SEP.to_string()));
+    let dest = f.tmp.path().join("t").to_string_lossy().into_owned();
+    let dst = join(&dest, "x.flac");
+    let (st, fin, _) = copy::copy_one(&src, &dst);
+    assert_eq!((st, fin.as_str()), ("copied", dst.as_str()));
+    let leftovers: Vec<_> = std::fs::read_dir(&dest)
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".part"))
+        .collect();
+    assert!(leftovers.is_empty(), "temporary files left behind");
+    // finishing a temp file onto a name that appeared meanwhile picks a new name instead
+    let part = copy::part_name(&dst);
+    std::fs::write(&part, b"new").unwrap();
+    let fin = copy::finish_part(&part, &dst).unwrap();
+    assert!(fin.ends_with("x (2).flac"));
+    assert_eq!(std::fs::read(&dst).unwrap(), std::fs::read(&src).unwrap());
+}
+
+#[test]
+fn same_name_and_size_but_different_music_is_not_already_there() {
+    let f = fixture();
+    let dir = f.tmp.path().to_string_lossy().into_owned();
+    let (a, b) = (join(&dir, "a.mp3"), join(&join(&dir, "d"), "a.mp3"));
+    std::fs::write(&a, vec![1u8; 100_000]).unwrap();
+    std::fs::create_dir_all(join(&dir, "d")).unwrap();
+    std::fs::write(&b, vec![2u8; 100_000]).unwrap();
+    let (st, fin, _) = copy::copy_one(&a, &b);
+    assert_eq!(st, "copied");
+    assert!(fin.ends_with("a (2).mp3"));
+    assert_eq!(copy::copy_one(&a, &fin).0, "skipped"); // the real copy is recognised
+}
+
+#[test]
+fn names_fit_any_stick() {
+    let long = format!(
+        "Artist - Album - 01 - {}End.flac",
+        "Very Long Title ".repeat(14)
+    );
+    let plan = copy::plan_copies(
+        &[Item {
+            src: format!("/m/{long}"),
+            rel: String::new(),
+            n: Some(1),
+        }],
+        "/d",
+        false,
+        true,
+    );
+    let name = paths::basename(&plan[0].1);
+    assert!(
+        name.len() <= 240 && name.starts_with("001 - Artist") && name.ends_with(".flac"),
+        "{name}"
+    );
+    let multi = format!("{}.mp3", "Ünïcödé ".repeat(40));
+    let fitted = copy::safe(&multi);
+    assert!(fitted.len() <= 240 && fitted.ends_with(".mp3")); // cut on a character boundary
+    assert_eq!(copy::safe("Vol. 2..."), "Vol. 2_");
+    assert_eq!(copy::safe("CON.mp3"), "_CON.mp3");
+    assert_eq!(copy::safe("aux"), "_aux");
+    assert_eq!(copy::safe("Auxiliary.mp3"), "Auxiliary.mp3");
+}
+
+#[test]
+fn usb_without_ffmpeg_still_copies_what_decks_play() {
+    let _f = fixture(); // holds the environment lock
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().to_string_lossy().into_owned();
+    let (mp3, flac) = (join(&dir, "a.mp3"), join(&dir, "b.flac"));
+    std::fs::write(&mp3, b"mp3").unwrap();
+    std::fs::write(&flac, b"flac").unwrap();
+    let path = std::env::var_os("PATH");
+    std::env::set_var("PATH", "");
+    let r1 = copy::convert_one(&mp3, &join(&dir, "usb/001 - a.mp3"), "aiff");
+    let r2 = copy::convert_one(&flac, &join(&dir, "usb/002 - b.flac"), "aiff");
+    if let Some(p) = path {
+        std::env::set_var("PATH", p);
+    }
+    if crate::paths::WINDOWS {
+        return; // winget's ffmpeg is found outside PATH on Windows
+    }
+    assert_eq!(r1.0, "copied");
+    assert_eq!(r2.0, "error");
+    assert!(r2.2.contains("ffmpeg"));
+}
+
+#[test]
+fn hidden_files_and_symlink_loops_are_not_songs() {
+    let f = fixture();
+    let dir = paths::dirname(&join(
+        &f.root,
+        &LIBRARY[0].replace('/', &paths::SEP.to_string()),
+    ))
+    .to_string();
+    std::fs::write(
+        join(
+            &dir,
+            "._Depeche Mode - Violator - 06 - Enjoy the Silence.flac",
+        ),
+        b"mac junk",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("..", join(&dir, "loop")).unwrap();
+    let lib = Library::new(&f.root);
+    lib.scan(|_| {});
+    assert_eq!(lib.len(), LIBRARY.len() - 1);
+}
+
+#[test]
+fn go_back_finds_what_songcopy_kept() {
+    let _f = fixture();
+    let base = paths::app_base();
+    let old = join(&join(&base, "songcopy"), "previous");
+    std::fs::create_dir_all(&old).unwrap();
+    let suffix = if paths::WINDOWS { ".exe" } else { "" };
+    std::fs::write(
+        join(&old, &format!("songcopy-2.0.2{suffix}")),
+        b"old program",
+    )
+    .unwrap();
+    let (v, p) = crate::update::previous().expect("the songcopy backup");
+    assert_eq!(v, "2.0.2");
+    assert!(p.contains("songcopy"));
+}
+
+#[test]
+fn migration_is_done_once_and_never_overwrites() {
+    let _g = TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
+    let tmp = tempfile::tempdir().unwrap();
+    let base = tmp.path().to_string_lossy().into_owned();
+    std::env::set_var("LOCALAPPDATA", &base);
+    let old = join(&base, "songcopy");
+    let new = join(&base, "dubplate");
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::create_dir_all(&new).unwrap();
+    std::fs::write(join(&old, "settings.json"), br#"{"server": "old"}"#).unwrap();
+    std::fs::write(join(&old, "copied.json"), b"{}").unwrap();
+    std::fs::write(join(&new, "settings.json"), br#"{"server": "new"}"#).unwrap(); // dubplate 2.1.0 already ran here
+    paths::app_dir();
+    assert_eq!(
+        crate::discover::setting_str("server").as_deref(),
+        Some("new")
+    ); // not overwritten
+    assert!(!paths::isfile(&join(&new, "copied.json"))); // dubplate already ran here: its folder stays as the user has it
+    std::fs::remove_dir_all(&new).unwrap(); // the user resets dubplate...
+    paths::app_dir();
+    assert!(!paths::isfile(&join(&new, "settings.json"))); // ...and the old settings don't come back
+}
+
+#[test]
+fn writers_never_corrupt_a_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let p = tmp.path().join("x.json").to_string_lossy().into_owned();
+    std::thread::scope(|s| {
+        for t in 0..8 {
+            let p = p.clone();
+            s.spawn(move || {
+                for i in 0..100 {
+                    let body =
+                        serde_json::json!({"t": t, "i": i, "pad": "x".repeat(5000)}).to_string();
+                    paths::write_atomic(&p, body.as_bytes()).unwrap();
+                }
+            });
+        }
+    });
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+    assert!(v.get("t").is_some());
+    let stray = std::fs::read_dir(tmp.path()).unwrap().count();
+    assert_eq!(stray, 1, "temporary files left behind");
+}
+
+#[test]
+fn stale_temp_files_are_tidied_but_nothing_else() {
+    let tmp = tempfile::tempdir().unwrap();
+    let d = tmp.path().to_string_lossy().into_owned();
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(7200);
+    let make = |name: &str, aged: bool| {
+        let p = join(&d, name);
+        std::fs::write(&p, b"x").unwrap();
+        if aged {
+            std::fs::File::options()
+                .write(true)
+                .open(&p)
+                .unwrap()
+                .set_modified(old)
+                .unwrap();
+        }
+        p
+    };
+    let stale = make(".dubplate-123-4.part", true);
+    let fresh = make(".dubplate-123-5.part", false); // a copy still running elsewhere
+    let song = make("Song.part", true); // not ours
+    let lookalike = make(".dubplate-notes.part", true); // not ours either
+    copy::clean_stale_parts(&d);
+    assert!(!paths::exists(&stale));
+    assert!(paths::exists(&fresh) && paths::exists(&song) && paths::exists(&lookalike));
+}
+
+// ---------------------------------------------------------------------------- second review round
+
+#[test]
+fn renaming_never_replaces_a_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let d = tmp.path().to_string_lossy().into_owned();
+    let (a, b) = (join(&d, "a"), join(&d, "b"));
+    std::fs::write(&a, b"new").unwrap();
+    std::fs::write(&b, b"keep me").unwrap();
+    let e = paths::rename_noreplace(&a, &b).unwrap_err();
+    assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists);
+    assert_eq!(std::fs::read(&b).unwrap(), b"keep me");
+    let c = join(&d, "c");
+    paths::rename_noreplace(&a, &c).unwrap();
+    assert!(!paths::exists(&a) && std::fs::read(&c).unwrap() == b"new");
+}
+
+#[test]
+fn names_cut_and_cleaned_correctly() {
+    let bach = format!(
+        "J.S. Bach: Mass in B minor, BWV 232 ({})",
+        "Collegium Vocale Gent ".repeat(12)
+    );
+    let f = copy::safe(&bach);
+    assert!(
+        f.len() <= 240 && f.starts_with("J.S. Bach_ Mass in B minor"),
+        "{f}"
+    );
+    assert_eq!(copy::safe("AC/DC"), "AC_DC");
+    assert_eq!(copy::safe("../x"), ".._x");
+    assert_eq!(copy::safe("Aux.Live.mp3"), "_Aux.Live.mp3");
+    assert!(!copy::usb_folder("/stick", "../tmp/x").starts_with("/tmp"));
+}
+
+#[test]
+fn band_names_with_dots_are_kept_and_junk_folders_skipped() {
+    use crate::library::junk_folder;
+    for keep in [
+        ".38 Special",
+        "...And You Will Know Us by the Trail of Dead",
+        "A.F.I.",
+        "Podcasts",
+    ] {
+        assert!(!junk_folder(keep), "{keep}");
+    }
+    for junk in [
+        ".metube",
+        ".Trash-1000",
+        ".git",
+        "@eaDir",
+        "#recycle",
+        "$RECYCLE.BIN",
+    ] {
+        assert!(junk_folder(junk), "{junk}");
+    }
+    let f = fixture();
+    let p = join(
+        &join(&f.root, ".38 Special"),
+        ".38 Special - Hold On Loosely.mp3",
+    );
+    std::fs::create_dir_all(paths::dirname(&p)).unwrap();
+    std::fs::write(&p, b"song").unwrap();
+    let lib = Library::new(&f.root);
+    lib.scan(|_| {});
+    assert_eq!(lib.len(), LIBRARY.len()); // the .38 Special song is in
+}
+
+#[test]
+fn an_earlier_copy_under_a_2_name_is_recognised() {
+    let f = fixture();
+    let dir = f.tmp.path().to_string_lossy().into_owned();
+    let src = join(&dir, "song.mp3");
+    std::fs::write(&src, vec![7u8; 1000]).unwrap();
+    let dest = join(&dir, "out");
+    std::fs::create_dir_all(&dest).unwrap();
+    std::fs::write(join(&dest, "song.mp3"), vec![8u8; 1000]).unwrap(); // a different song, same name
+    let first = copy::copy_one(&src, &join(&dest, "song.mp3"));
+    assert_eq!(first.0, "copied");
+    let again = copy::copy_one(&src, &join(&dest, "song.mp3"));
+    assert_eq!((again.0, again.1.as_str()), ("skipped", first.1.as_str())); // no "song (3).mp3"
+}
+
+#[test]
+fn usb_memory_is_per_playlist_folder_and_keeps_2_1_0_records() {
+    let f = fixture();
+    let src = join(&f.root, &LIBRARY[4].replace('/', &paths::SEP.to_string()));
+    let stick = f.tmp.path().join("stick").to_string_lossy().into_owned();
+    let (friday, saturday) = (
+        copy::usb_folder(&stick, "Friday"),
+        copy::usb_folder(&stick, "Saturday"),
+    );
+    let plan = copy::plan_copies(
+        &[Item {
+            src: src.clone(),
+            rel: String::new(),
+            n: Some(1),
+        }],
+        &friday,
+        false,
+        true,
+    );
+    copy::transfer(&plan, &friday, None, |_, _| {});
+    let srcs = [src.clone()];
+    assert!(Ledger::copied_usb(&stick, &friday, &srcs).contains_key(&src));
+    assert!(!Ledger::copied_usb(&stick, &saturday, &srcs).contains_key(&src)); // Saturday still gets it
+                                                                               // dubplate 2.1.0 filed USB copies under the whole stick: still recognised for their folder
+    let plan = copy::plan_copies(
+        &[Item {
+            src: src.clone(),
+            rel: String::new(),
+            n: Some(2),
+        }],
+        &saturday,
+        false,
+        true,
+    );
+    copy::transfer(&plan, &stick, None, |_, _| {});
+    assert!(Ledger::copied_usb(&stick, &saturday, &srcs).contains_key(&src));
+}
+
+#[test]
+fn ffmpeg_complaints_are_readable() {
+    let e = "[flac @ 0x5fe18707ecc0] invalid sync code\n[in#0 @ 0x5fe1] Error opening input: Invalid data found when processing input\n[aost#0:0/pcm_s16be @ 0x5fe1] Task finished with error code: -22 (Invalid argument)\n";
+    let s = super::copy::tests_reason(e);
+    assert_eq!(s, "invalid sync code");
 }

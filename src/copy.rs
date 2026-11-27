@@ -10,11 +10,54 @@ use std::io::Write;
 use std::process::Command;
 use std::sync::{LazyLock, Mutex};
 
-static BAD_CHARS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"[<>:"|?*\x00-\x1f]"#).unwrap());
+static BAD_CHARS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"[<>:"/\\|?*\x00-\x1f]"#).unwrap());
 
-/// make a name safe for USB sticks and Windows
+/// Longest file name we create, in bytes. Most file systems allow 255; this leaves room for
+/// " (2)" and keeps FAT32/exFAT sticks (255 UTF-16 characters) happy too.
+const MAX_NAME: usize = 240;
+
+/// Windows (and so FAT32 sticks used with it) refuses these names, with any extension
+const RESERVED: &[&str] = &[
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
+/// make one file or folder name safe for USB sticks and Windows: no forbidden characters,
+/// no trailing dots/spaces, no reserved names, not too long (the extension is kept)
 pub fn safe(name: &str) -> String {
-    BAD_CHARS.replace_all(name, "_").into_owned()
+    let mut s = BAD_CHARS.replace_all(name, "_").into_owned();
+    let trimmed = s.trim_end_matches(['.', ' ']).len();
+    if trimmed < s.len() {
+        s.truncate(trimmed);
+        s.push('_');
+    }
+    // Windows reserves these names followed by any extension(s): "aux.live.mp3" too
+    let first = s.split('.').next().unwrap_or("").trim();
+    if RESERVED.iter().any(|r| r.eq_ignore_ascii_case(first)) {
+        s = format!("_{s}");
+    }
+    fit(&s, MAX_NAME)
+}
+
+/// shorten a name to at most `max` bytes, cutting the end of the name but keeping the extension
+pub fn fit(name: &str, max: usize) -> String {
+    if name.len() <= max {
+        return name.to_string();
+    }
+    let (stem, ext) = splitext(name);
+    // a long "extension" isn't one ("J.S. Bach: Mass in B minor, BWV 232 (…)"): cut the whole name
+    let (stem, ext) = if ext.len() < 16 {
+        (stem, ext)
+    } else {
+        (name, "")
+    };
+    let mut cut = max.saturating_sub(ext.len());
+    while !stem.is_char_boundary(cut.min(stem.len())) {
+        cut -= 1;
+    }
+    let stem = stem[..cut.min(stem.len())].trim_end_matches(['.', ' ']);
+    format!("{stem}{ext}")
 }
 
 #[derive(Clone, Debug)]
@@ -89,31 +132,155 @@ fn unique(dst: &str) -> String {
     }
 }
 
-/// -> (copied | skipped | error, final destination, message). Never overwrites.
-pub fn copy_one(src: &str, dst: &str) -> (&'static str, String, String) {
-    let go = || -> std::io::Result<(&'static str, String, String)> {
-        std::fs::create_dir_all(dirname(dst))?;
-        let mut dst = dst.to_string();
-        if paths::exists(&dst) {
-            if paths::getsize(&dst)? == paths::getsize(src)? {
-                return Ok(("skipped", dst, "already there".into()));
-            }
-            dst = unique(&dst);
+/// are these two files the same? (size, then the first and last 64 KB)
+fn same_file(a: &str, b: &str) -> bool {
+    use std::io::{Read, Seek, SeekFrom};
+    let (Ok(sa), Ok(sb)) = (paths::getsize(a), paths::getsize(b)) else {
+        return false;
+    };
+    if sa != sb {
+        return false;
+    }
+    let chunk = |p: &str, from: u64| -> Option<Vec<u8>> {
+        let mut f = std::fs::File::open(p).ok()?;
+        f.seek(SeekFrom::Start(from)).ok()?;
+        let mut buf = Vec::new();
+        f.take(65536).read_to_end(&mut buf).ok()?;
+        Some(buf)
+    };
+    let tail = sa.saturating_sub(65536);
+    let head = chunk(a, 0);
+    head.is_some() && head == chunk(b, 0) && chunk(a, tail) == chunk(b, tail)
+}
+
+static PART: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// the existing file at dst, or at one of its "dst (2)", "dst (3)"… names, that is this same song
+fn already_there(src: &str, dst: &str) -> Option<String> {
+    if !paths::exists(dst) {
+        return None;
+    }
+    if same_file(src, dst) {
+        return Some(dst.to_string());
+    }
+    let (base, ext) = splitext(dst);
+    for k in 2.. {
+        let d = format!("{base} ({k}){ext}");
+        if !paths::exists(&d) {
+            return None;
         }
+        if same_file(src, &d) {
+            return Some(d);
+        }
+    }
+    None
+}
+
+/// a temporary name next to dst, unique to this copy (finished copies are renamed to dst)
+pub fn part_name(dst: &str) -> String {
+    let n = PART.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    join(
+        dirname(dst),
+        &format!(".dubplate-{}-{n}.part", std::process::id()),
+    )
+}
+
+/// Remove dubplate's own temporary files left in `dir` by a copy that was killed (power cut,
+/// window closed mid-copy). Only ".dubplate-<n>-<n>.part" files over an hour old, so a copy
+/// still running in another window is never touched.
+pub fn clean_stale_parts(dir: &str) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let ours = name
+            .strip_prefix(".dubplate-")
+            .and_then(|r| r.strip_suffix(".part"))
+            .is_some_and(|mid| {
+                mid.split('-').count() == 2
+                    && mid
+                        .split('-')
+                        .all(|x| !x.is_empty() && x.bytes().all(|c| c.is_ascii_digit()))
+            });
+        let old = e
+            .metadata()
+            .and_then(|m| m.modified())
+            .is_ok_and(|t| t < hour_ago);
+        if ours && old {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
+}
+
+/// move a finished temporary file to its name - never over an existing file
+pub fn finish_part(part: &str, dst: &str) -> std::io::Result<String> {
+    let mut target = if paths::exists(dst) {
+        unique(dst)
+    } else {
+        dst.to_string()
+    };
+    let mut last = None;
+    for attempt in 1..=10 {
+        match paths::rename_noreplace(part, &target) {
+            Ok(()) => return Ok(target),
+            // a file with that name appeared a moment ago: never replace it, pick the next name
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => target = unique(dst),
+            // Windows: antivirus / indexer still looking at the new file - wait and try again
+            Err(e) if paths::transient(&e) => {
+                std::thread::sleep(std::time::Duration::from_millis(100 * attempt));
+                last = Some(e);
+            }
+            Err(e) => {
+                last = Some(e);
+                break;
+            }
+        }
+    }
+    let _ = std::fs::remove_file(part);
+    Err(last.unwrap_or_else(|| std::io::Error::other("couldn't finish the copy")))
+}
+
+/// -> (copied | skipped | error, final destination, message). Never overwrites.
+/// The copy is written to a temporary file and only renamed once it's complete and on the
+/// disk, so an interrupted copy (full stick, pulled out, closed window) never leaves a
+/// broken file under the song's name.
+pub fn copy_one(src: &str, dst: &str) -> (&'static str, String, String) {
+    let mut part = String::new();
+    let mut go = || -> std::io::Result<(&'static str, String, String)> {
+        std::fs::create_dir_all(dirname(dst))?;
+        // already there, maybe as "x (2)" from an earlier run? then nothing to do
+        if let Some(same) = already_there(src, dst) {
+            return Ok(("skipped", same, "already there".into()));
+        }
+        let dst = dst.to_string();
         let mut fi = std::fs::File::open(src)?;
-        // create_new: we can never clobber a file that appeared meanwhile
+        part = part_name(&dst);
         let mut fo = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(&dst)?;
+            .open(&part)?;
         std::io::copy(&mut fi, &mut fo)?;
         fo.flush()?;
+        fo.sync_all()?; // really on the stick before it counts as copied
+        drop(fo);
+        let fin = finish_part(&part, &dst)?;
+        part.clear();
+        // the song's own date, set on the finished file (a backdated temp file would look
+        // like a leftover to clean_stale_parts)
         if let Ok(m) = fi.metadata().and_then(|m| m.modified()) {
-            let _ = fo.set_modified(m); // e.g. FAT32 USB sticks may refuse; the music is copied fine
+            if let Ok(f) = std::fs::OpenOptions::new().write(true).open(&fin) {
+                let _ = f.set_modified(m); // FAT32 sticks may refuse; the music is copied fine
+            }
         }
-        Ok(("copied", dst, String::new()))
+        Ok(("copied", fin, String::new()))
     };
-    go().unwrap_or_else(|e| ("error", dst.to_string(), e.to_string()))
+    let r = go();
+    if !part.is_empty() {
+        let _ = std::fs::remove_file(&part);
+    }
+    r.unwrap_or_else(|e| ("error", dst.to_string(), e.to_string()))
 }
 
 // ---------------------------------------------------------------------------- USB sticks for CDJs / XDJs
@@ -240,6 +407,36 @@ pub fn deck_playable(src: &str, info: &Probe) -> bool {
 }
 
 /// deck-ready copy of src at dst (extension decided here). Never overwrites, never touches src.
+/// the most useful line of ffmpeg's complaint, without its internal "[codec @ 0x5fe1…]" prefixes
+fn ffmpeg_reason(stderr: &str) -> String {
+    static PREFIX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\[[^\]]*\]\s*").unwrap());
+    let lines: Vec<String> = stderr
+        .lines()
+        .map(|l| PREFIX.replace(l.trim(), "").trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    // the first line usually says what's wrong; later ones are "Task finished with error…"
+    let best = lines
+        .iter()
+        .find(|l| !l.starts_with("Task finished") && !l.starts_with("Conversion failed"))
+        .or(lines.first());
+    let r: String = best
+        .map(String::as_str)
+        .unwrap_or("unknown error")
+        .chars()
+        .take(200)
+        .collect();
+    r
+}
+
+#[cfg(test)]
+pub fn tests_reason(e: &str) -> String {
+    ffmpeg_reason(e)
+}
+
+/// message for a file copied to a USB without being checked (no ffprobe)
+pub const UNCHECKED: &str = "unchecked";
+
 pub fn convert_one(src: &str, dst: &str, fmt: &str) -> (&'static str, String, String) {
     let info = probe(src);
     if let Some(i) = &info {
@@ -247,23 +444,36 @@ pub fn convert_one(src: &str, dst: &str, fmt: &str) -> (&'static str, String, St
             return copy_one(src, dst);
         }
     }
-    let Some(ffmpeg) = ffmpeg_path().0 else {
+    let ffmpeg = ffmpeg_path().0;
+    let ext = splitext(src).1.to_lowercase();
+    if info.is_none() && matches!(ext.as_str(), ".mp3" | ".wav" | ".aif" | ".aiff") {
+        // couldn't look inside (no ffprobe): these formats play on every deck as long as they're
+        // ordinary 44.1/48 kHz files - copy them, and say they weren't checked
+        let (st, fin, msg) = copy_one(src, dst);
+        return (
+            st,
+            fin,
+            if st == "copied" {
+                UNCHECKED.into()
+            } else {
+                msg
+            },
+        );
+    }
+    let Some(ffmpeg) = ffmpeg else {
         return (
             "error",
             dst.into(),
             "this file needs converting for the decks, but ffmpeg isn't installed".into(),
         );
     };
-    let mut dst = format!(
+    let dst = format!(
         "{}{}",
         splitext(dst).0,
         if fmt == "mp3" { ".mp3" } else { ".aiff" }
     );
     if let Err(e) = std::fs::create_dir_all(dirname(&dst)) {
         return ("error", dst, e.to_string());
-    }
-    if paths::exists(&dst) {
-        dst = unique(&dst);
     }
     let rate = info
         .as_ref()
@@ -296,7 +506,7 @@ pub fn convert_one(src: &str, dst: &str, fmt: &str) -> (&'static str, String, St
         };
         vec!["-c:a", pcm, "-write_id3v2", "1", "-f", "aiff"]
     };
-    let part = format!("{dst}.part");
+    let part = part_name(&dst);
     let mut last_err = String::new();
     let mut ok = false;
     for art in [
@@ -324,36 +534,31 @@ pub fn convert_one(src: &str, dst: &str, fmt: &str) -> (&'static str, String, St
                 ok = true;
                 break;
             }
-            Ok(o) => {
-                last_err = String::from_utf8_lossy(&o.stderr)
-                    .trim()
-                    .chars()
-                    .rev()
-                    .take(300)
-                    .collect::<String>()
-                    .chars()
-                    .rev()
-                    .collect()
-            }
+            Ok(o) => last_err = ffmpeg_reason(&String::from_utf8_lossy(&o.stderr)),
             Err(e) => last_err = e.to_string(),
         }
     }
     if !ok {
         let _ = std::fs::remove_file(&part);
-        return ("error", dst, format!("conversion failed: {last_err}"));
+        return ("error", dst, format!("couldn't convert it - the file may be damaged or not really audio (ffmpeg: {last_err})"));
     }
-    if paths::exists(&dst) {
+    // really on the stick before it counts as copied (syncing needs a writable handle on Windows)
+    if let Err(e) = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&part)
+        .and_then(|f| f.sync_all())
+    {
         let _ = std::fs::remove_file(&part);
         return (
             "error",
             dst,
-            "a file with that name appeared while converting".into(),
+            format!("couldn't finish writing the file ({e})"),
         );
     }
-    match std::fs::rename(&part, &dst) {
-        Ok(()) => {
+    match finish_part(&part, &dst) {
+        Ok(fin) => {
             let from = info.map(|i| i.codec).unwrap_or_else(|| "?".into());
-            ("converted", dst, format!("{from} → {}", fmt.to_uppercase()))
+            ("converted", fin, format!("{from} → {}", fmt.to_uppercase()))
         }
         Err(e) => ("error", dst, e.to_string()),
     }
@@ -363,7 +568,13 @@ pub fn usb_folder(dest: &str, name: &str) -> String {
     let n = safe(name.trim());
     let n = n.trim_matches(|c| c == '.' || c == ' ');
     let n: String = if n.is_empty() {
-        "dubplate".into()
+        // a stick made by songcopy (dubplate's old name) keeps its folder, so a re-run
+        // doesn't split the set across two folders
+        if paths::isdir(&join(dest, "songcopy")) {
+            "songcopy".into()
+        } else {
+            "dubplate".into()
+        }
     } else {
         n.chars().take(80).collect()
     };
@@ -429,6 +640,16 @@ impl Ledger {
 
     /// -> {source: copy} for the sources already copied to dest (and still there)
     pub fn copied(dest: &str, srcs: &[String]) -> HashMap<String, String> {
+        Self::copied_in(dest, None, srcs)
+    }
+
+    /// for a USB playlist folder: its own memory, plus what dubplate 2.1.0 recorded under the
+    /// whole stick for songs that went into this folder
+    pub fn copied_usb(stick: &str, folder: &str, srcs: &[String]) -> HashMap<String, String> {
+        Self::copied_in(folder, Some(stick), srcs)
+    }
+
+    fn copied_in(dest: &str, legacy: Option<&str>, srcs: &[String]) -> HashMap<String, String> {
         let mut out = HashMap::new();
         if dest.trim().is_empty() {
             return out;
@@ -436,16 +657,22 @@ impl Ledger {
         let dest = paths::abspath(&paths::expanduser(dest));
         let all = Self::load();
         let m = all.get(&Self::key(&dest));
+        let old = legacy.and_then(|l| all.get(&Self::key(&paths::abspath(&paths::expanduser(l)))));
+        let inside = format!("{}{SEP}", normcase(&dest));
         for s in srcs {
-            if let Some(d) = m.and_then(|m| m.get(s)) {
-                if paths::exists(d) {
-                    out.insert(s.clone(), d.clone());
-                    continue;
-                }
+            let mut recorded = m.and_then(|m| m.get(s));
+            if recorded.is_none_or(|d| !paths::exists(d)) {
+                recorded = old
+                    .and_then(|o| o.get(s))
+                    .filter(|d| normcase(d).starts_with(&inside));
             }
-            // copied before dubplate kept a record (or by hand): same name + size right in dest
+            if let Some(d) = recorded.filter(|d| paths::exists(d)) {
+                out.insert(s.clone(), d.clone());
+                continue;
+            }
+            // copied before dubplate kept a record (or by hand): the same file right in dest
             let d = join(&dest, &safe(basename(s)));
-            if paths::exists(&d) && paths::getsize(&d).ok() == paths::getsize(s).ok() {
+            if same_file(s, &d) {
                 out.insert(s.clone(), d);
             }
         }
@@ -458,6 +685,8 @@ pub struct Transfer {
     pub copied: usize,
     pub converted: usize,
     pub skipped: usize,
+    /// copied to a USB without being checked (no ffprobe): WAV/AIFF the decks might not play
+    pub unchecked: usize,
     pub errors: Vec<CopyError>,
     pub done: Vec<String>,
     #[serde(skip)]
@@ -480,6 +709,10 @@ pub fn transfer(
 ) -> Transfer {
     let mut r = Transfer::default();
     let mut saved = 0;
+    let dirs: HashSet<&str> = plan.iter().map(|(_, d)| dirname(d)).collect();
+    for d in dirs {
+        clean_stale_parts(d);
+    }
     for (k, (s, d)) in plan.iter().enumerate() {
         on_progress(k + 1, s);
         let (st, fin, msg) = match usb_format {
@@ -494,7 +727,12 @@ pub fn transfer(
                 });
                 continue;
             }
-            "copied" => r.copied += 1,
+            "copied" => {
+                r.copied += 1;
+                if msg == UNCHECKED {
+                    r.unchecked += 1;
+                }
+            }
             "converted" => r.converted += 1,
             _ => r.skipped += 1,
         }

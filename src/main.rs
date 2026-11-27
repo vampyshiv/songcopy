@@ -80,6 +80,10 @@ struct ServeArgs {
     /// folder to suggest for copying into (e.g. your Traktor folder)
     #[arg(long)]
     dest: Option<String>,
+    /// with --host 0.0.0.0: another name the page may be opened under (e.g. a reverse-proxy
+    /// domain). Local names, IP addresses and this computer's own name always work.
+    #[arg(long = "allow-host", value_name = "NAME")]
+    allow_hosts: Vec<String>,
 }
 
 #[derive(Args)]
@@ -211,7 +215,7 @@ fn run(cli: Cli) -> i32 {
     }));
     match cmd {
         Cmd::Serve(a) => {
-            let restarting = std::env::var_os("DUBPLATE_RESTART").is_some();
+            let restarting = crate::update::is_restart();
             if WINDOWS && cli.music.is_none() && !restarting && server::already_running(a.port) {
                 let url = format!("http://localhost:{}", a.port); // second double-click: just show the page again
                 println!("Dubplate is already running - opening {url}");
@@ -225,6 +229,7 @@ fn run(cli: Cli) -> i32 {
                 host: a.host,
                 no_browser: a.no_browser,
                 dest: a.dest,
+                allow_hosts: a.allow_hosts,
             });
             0
         }
@@ -543,15 +548,25 @@ fn cli_run(music: &str, list: &str, prefer: &str, strict: bool, copy: Option<Cop
         .collect();
 
     let dest = paths::abspath(&paths::expanduser(&a.dest));
+    let usb_format = a.usb.then(|| a.usb_format.clone());
+    // a USB stick remembers per playlist folder; a folder remembers itself
+    let usb_target = usb_format.as_ref().map(|_| {
+        let stem = paths::splitext(paths::basename(list)).0.to_string();
+        copy::usb_folder(&dest, a.name.as_deref().unwrap_or(&stem))
+    });
     if !a.recopy {
         let srcs: Vec<String> = items.iter().map(|i| i.src.clone()).collect();
-        let before = Ledger::copied(&dest, &srcs);
+        let before = match &usb_target {
+            Some(t) => Ledger::copied_usb(&dest, t, &srcs),
+            None => Ledger::copied(&dest, &srcs),
+        };
         if !before.is_empty() {
             items.retain(|i| !before.contains_key(&i.src));
             println!(
-                "{}{} already copied to {dest} on an earlier run - skipped{} {}(--recopy to copy them again){}",
+                "{}{} already copied to {} on an earlier run - skipped{} {}(--recopy to copy them again){}",
                 c.g,
                 before.len(),
+                usb_target.as_deref().unwrap_or(&dest),
                 c.x,
                 c.d,
                 c.x
@@ -562,14 +577,13 @@ fn cli_run(music: &str, list: &str, prefer: &str, strict: bool, copy: Option<Cop
             }
         }
     }
-    let usb_format = a.usb.then(|| a.usb_format.clone());
-    let (target, plan) = if usb_format.is_some() {
+    let (target, plan) = if let Some(t) = usb_target.clone() {
         let (ff, fp) = copy::ffmpeg_path();
-        if ff.is_none() || fp.is_none() {
-            println!("{}ffmpeg isn't installed: songs the decks can't play (FLAC etc.) will fail. Install ffmpeg first.{}", c.y, c.x);
+        if ff.is_none() {
+            println!("{}ffmpeg isn't installed: songs the decks can't play (FLAC etc.) can't be converted; MP3, WAV and AIFF are copied. Install ffmpeg first.{}", c.y, c.x);
+        } else if fp.is_none() {
+            println!("{}ffprobe (part of ffmpeg) isn't installed: files can't be checked, so they're judged by their type.{}", c.y, c.x);
         }
-        let stem = paths::splitext(paths::basename(list)).0.to_string();
-        let t = copy::usb_folder(&dest, a.name.as_deref().unwrap_or(&stem));
         let p = copy::plan_copies(&items, &t, false, true);
         (t, p)
     } else {
@@ -619,7 +633,7 @@ fn cli_run(music: &str, list: &str, prefer: &str, strict: bool, copy: Option<Cop
         return incomplete;
     }
     let total_n = plan.len();
-    let r = copy::transfer(&plan, &dest, usb_format.as_deref(), |k, s| {
+    let r = copy::transfer(&plan, &target, usb_format.as_deref(), |k, s| {
         if c.on {
             let name: String = paths::basename(s).chars().take(60).collect();
             print!("\r  {k}/{total_n}  {name:<60}");
@@ -651,6 +665,15 @@ fn cli_run(music: &str, list: &str, prefer: &str, strict: bool, copy: Option<Cop
             String::new()
         }
     );
+    if r.unchecked > 0 {
+        println!(
+            "{}{} WAV/AIFF file{} copied without checking (ffprobe isn't installed): older decks only play them at 44.1/48 kHz, 16/24-bit.{}",
+            c.y,
+            r.unchecked,
+            if r.unchecked > 1 { "s were" } else { " was" },
+            c.x
+        );
+    }
     if !r.errors.is_empty() {
         println!(
             "{}{}{} could not be copied:{}",

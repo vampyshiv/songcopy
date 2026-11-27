@@ -14,6 +14,33 @@ use std::sync::{Condvar, LazyLock, Mutex, RwLock};
 
 pub const SKIP_DIRS: &[&str] = &["Podcasts"]; // top-level folders that aren't songs
 
+/// folders that hold no music: apps' and systems' hidden folders (".metube", ".Trash", ".git":
+/// a dot then a letter) and NAS/Windows housekeeping. Band names that start with a dot
+/// (".38 Special", "...And You Will Know Us by the Trail of Dead") are kept.
+pub fn junk_folder(name: &str) -> bool {
+    let hidden_app =
+        name.starts_with('.') && name[1..].starts_with(|c: char| c.is_ascii_alphabetic());
+    hidden_app
+        || matches!(
+            name,
+            "@eaDir"
+                | "#recycle"
+                | "#snapshot"
+                | "$RECYCLE.BIN"
+                | "System Volume Information"
+                | "lost+found"
+        )
+}
+
+/// clears the "scanning" flag however a scan ends, even if it fails, so the library can
+/// always be read again
+struct ScanFlag<'a>(&'a AtomicBool);
+impl Drop for ScanFlag<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
 static FNAME_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(?P<artist>.+?) - (?P<album>.+) - (?P<track>\d{1,3}) - (?P<title>.+)$").unwrap()
 });
@@ -196,7 +223,16 @@ impl Library {
     /// read every audio file under root (depth first, sorted, like the Python version)
     fn walk(&self, mut each: impl FnMut(String, String, u64)) {
         let mut stack: Vec<(String, String)> = vec![(self.root.clone(), String::new())];
+        // folders already read (by their real location): a symlink pointing back up the tree
+        // would otherwise list the same songs again and again
+        let mut visited: HashSet<std::path::PathBuf> = HashSet::new();
+        let real_root = std::fs::canonicalize(&self.root).ok();
         while let Some((dir, rel)) = stack.pop() {
+            if let Ok(real) = std::fs::canonicalize(&dir) {
+                if !visited.insert(real) {
+                    continue;
+                }
+            }
             let Ok(rd) = std::fs::read_dir(&dir) else {
                 continue;
             };
@@ -207,6 +243,9 @@ impl Library {
                 let Some(name) = e.file_name().to_str().map(str::to_string) else {
                     continue;
                 };
+                if name.starts_with("._") {
+                    continue; // macOS leftovers ("._song.flac"), not music
+                }
                 let Ok(meta) = std::fs::metadata(e.path()) else {
                     continue;
                 }; // follows symlinks
@@ -216,11 +255,23 @@ impl Library {
                     format!("{rel}{SEP}{name}")
                 };
                 if meta.is_dir() {
-                    if !(rel.is_empty() && SKIP_DIRS.contains(&name.as_str()))
-                        && !name.starts_with('.')
+                    if (rel.is_empty() && SKIP_DIRS.contains(&name.as_str())) || junk_folder(&name)
                     {
-                        subdirs.push((join(&dir, &name), r));
+                        continue;
                     }
+                    // a shortcut (symlink) to a folder that's inside the library anyway: the real
+                    // folder is read under its own name, so its songs keep their real artist/album
+                    let is_link = e.file_type().map(|t| t.is_symlink()).unwrap_or(false);
+                    if is_link {
+                        if let (Some(root), Ok(target)) =
+                            (&real_root, std::fs::canonicalize(e.path()))
+                        {
+                            if target.starts_with(root) {
+                                continue;
+                            }
+                        }
+                    }
+                    subdirs.push((join(&dir, &name), r));
                 } else if is_audio(&name) {
                     each(join(&self.root, &r), r, meta.len());
                 }
@@ -230,7 +281,15 @@ impl Library {
     }
 
     pub fn scan(&self, mut on_progress: impl FnMut(usize)) -> usize {
-        self.scanning.store(true, Ordering::SeqCst);
+        // one scan at a time: if one is already running, it will bring everything up to date
+        if self
+            .scanning
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return self.len();
+        }
+        let _flag = ScanFlag(&self.scanning);
         self.progress.store(0, Ordering::SeqCst);
         let mut files: Vec<Track> = Vec::new();
         self.walk(|full, rel, size| {
@@ -285,7 +344,6 @@ impl Library {
         });
         self.install(files, None);
         self.save_cache();
-        self.scanning.store(false, Ordering::SeqCst);
         self.len()
     }
 

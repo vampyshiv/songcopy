@@ -22,6 +22,8 @@ pub struct Options {
     pub host: String,
     pub no_browser: bool,
     pub dest: Option<String>,
+    /// extra names the page may be opened under (reachable from the network only)
+    pub allow_hosts: Vec<String>,
 }
 
 #[derive(Serialize, Default, Clone)]
@@ -31,6 +33,7 @@ struct Job {
     copied: usize,
     converted: usize,
     skipped: usize,
+    unchecked: usize,
     errors: Vec<copy::CopyError>,
     current: String,
     finished: bool,
@@ -46,6 +49,7 @@ struct Ctx {
     lib: Arc<Library>,
     dest: Option<String>,
     local_only: bool,
+    allow_hosts: Vec<String>,
 }
 
 fn when(t: Option<chrono::NaiveDateTime>) -> Value {
@@ -106,7 +110,7 @@ pub fn already_running(port: u16) -> bool {
 
 pub fn serve(o: Options) {
     let url = format!("http://localhost:{}", o.port);
-    let restarting = std::env::var_os("DUBPLATE_RESTART").is_some();
+    let restarting = crate::update::is_restart();
     if !paths::isdir(&paths::abspath(&paths::expanduser(&o.music))) {
         eprintln!("Can't open the music folder: {}", o.music);
         std::process::exit(1);
@@ -167,6 +171,16 @@ pub fn serve(o: Options) {
         lib,
         dest: o.dest,
         local_only: o.host == "127.0.0.1" || o.host == "localhost",
+        allow_hosts: {
+            // this computer's own name, plus any the user allowed
+            let mut a: Vec<String> = o
+                .allow_hosts
+                .iter()
+                .map(|h| h.trim().trim_end_matches('.').to_ascii_lowercase())
+                .collect();
+            a.extend(machine_name());
+            a
+        },
     });
     for req in server.incoming_requests() {
         let ctx = ctx.clone();
@@ -226,13 +240,13 @@ fn decode_url(s: &str) -> String {
 
 fn handle(ctx: &Ctx, mut req: tiny_http::Request) {
     // only answer the page itself: not other websites open in the same browser
-    if ctx.local_only {
-        let host = header(&req, "Host").unwrap_or("");
-        let h = host.rsplit_once(':').map(|x| x.0).unwrap_or(host);
-        if !matches!(h, "localhost" | "127.0.0.1" | "[::1]") {
-            let _ = req.respond(json_response(403, &json!({"error": "forbidden"})));
-            return;
-        }
+    if !host_allowed(
+        header(&req, "Host").unwrap_or(""),
+        ctx.local_only,
+        &ctx.allow_hosts,
+    ) {
+        let _ = req.respond(json_response(403, &json!({"error": "forbidden"})));
+        return;
     }
     let url = req.url().to_string();
     let path = url.split('?').next().unwrap_or("").to_string();
@@ -292,6 +306,59 @@ fn handle(ctx: &Ctx, mut req: tiny_http::Request) {
     }
 }
 
+/// Is this the page's own address? Always: localhost. When reachable from the network
+/// (--host 0.0.0.0) also this machine's own addresses and local names ("myserver",
+/// "myserver.local"). Never a website's domain: that's how a page elsewhere could
+/// trick the browser into talking to dubplate ("DNS rebinding").
+fn host_allowed(host: &str, local_only: bool, allowed: &[String]) -> bool {
+    let h = if let Some(rest) = host.strip_prefix('[') {
+        rest.split(']').next().unwrap_or("") // [::1]:8765
+    } else {
+        host.rsplit_once(':').map(|x| x.0).unwrap_or(host)
+    };
+    let h = h.trim_end_matches('.').to_ascii_lowercase(); // "myserver.lan." = "myserver.lan"
+    if matches!(h.as_str(), "localhost" | "127.0.0.1" | "::1") {
+        return true;
+    }
+    if local_only || h.is_empty() {
+        return false;
+    }
+    // this machine's name in any form ("dahlias-den.fritz.box") and names the user allowed
+    if allowed
+        .iter()
+        .any(|a| !a.is_empty() && (h == *a || h.starts_with(&format!("{a}."))))
+    {
+        return true;
+    }
+    h.parse::<std::net::IpAddr>().is_ok()
+        || !h.contains('.')
+        || [".local", ".lan", ".home", ".internal", ".home.arpa"]
+            .iter()
+            .any(|t| h.ends_with(t))
+}
+
+/// this computer's network name ("dahlias-den"), lower case
+fn machine_name() -> Option<String> {
+    let n = if WINDOWS {
+        std::env::var("COMPUTERNAME").ok()
+    } else {
+        std::fs::read_to_string("/proc/sys/kernel/hostname")
+            .or_else(|_| std::fs::read_to_string("/etc/hostname"))
+            .ok()
+    }?;
+    let n = n.trim().to_ascii_lowercase();
+    (!n.is_empty()).then_some(n)
+}
+
+/// a song file inside the music library. Judged by the path itself with ".." resolved, so it
+/// can't step out of the library - while songs in a library folder that is a shortcut
+/// (symlink) to another drive still count.
+fn in_library(ctx: &Ctx, p: &str) -> bool {
+    let root = paths::normcase(&ctx.lib.root);
+    let inside = format!("{}{}", root.trim_end_matches(paths::SEP), paths::SEP);
+    paths::normcase(&paths::abspath(p)).starts_with(&inside) && paths::isfile(p) && is_audio(p)
+}
+
 fn s<'a>(b: &'a Value, k: &str) -> &'a str {
     b.get(k).and_then(Value::as_str).unwrap_or("")
 }
@@ -307,7 +374,7 @@ fn get(ctx: &Ctx, path: &str, q: &HashMap<String, String>) -> Value {
                 "root": lib.root, "count": lib.len(), "ready": lib.is_ready(),
                 "scanning": lib.scanning.load(Ordering::SeqCst), "progress": lib.progress.load(Ordering::Relaxed),
                 "scanned": when(lib.scanned_at()), "ffmpeg": ff.is_some() && fp.is_some(), "windows": WINDOWS,
-                "version": update::VERSION, "ffmpeg_installing": fi.0, "ffmpeg_log": fi.1,
+                "version": update::VERSION, "appdir": paths::app_dir(), "ffmpeg_installing": fi.0, "ffmpeg_log": fi.1,
                 "home": home, "dest": ctx.dest.clone().unwrap_or_default(),
                 "example": join(&join(&home, "Desktop"), "My songs"),
             })
@@ -330,9 +397,9 @@ fn get(ctx: &Ctx, path: &str, q: &HashMap<String, String>) -> Value {
 fn list_dir(raw: &str) -> Value {
     if WINDOWS && raw.is_empty() {
         // "This PC": the drives
-        let drives: Vec<Value> = ('C'..='Z')
+        let drives: Vec<Value> = ('A'..='Z')
+            .filter(|d| logical_drives() & (1 << (*d as u32 - 'A' as u32)) != 0)
             .map(|d| format!("{d}:\\"))
-            .filter(|d| paths::exists(d))
             .map(|d| json!({"name": d, "path": d}))
             .collect();
         return json!({"path": "", "parent": null, "free": "", "dirs": drives});
@@ -405,9 +472,23 @@ pub fn free_space(p: &str) -> u64 {
     }
 }
 
+/// which drive letters exist, without touching the drives (an empty card reader would
+/// otherwise make Windows complain)
+fn logical_drives() -> u32 {
+    #[cfg(windows)]
+    {
+        unsafe { GetLogicalDrives() }
+    }
+    #[cfg(not(windows))]
+    {
+        0
+    }
+}
+
 #[cfg(windows)]
 #[link(name = "kernel32")]
 extern "system" {
+    fn GetLogicalDrives() -> u32;
     fn GetDiskFreeSpaceExW(
         dir: *const u16,
         free_to_caller: *mut u64,
@@ -416,9 +497,59 @@ extern "system" {
     ) -> i32;
 }
 
+#[derive(Debug, PartialEq)]
+enum Range {
+    Full,
+    Part(u64, u64),
+    Unsatisfiable,
+}
+
+/// one "Range: bytes=..." (RFC 9110). Anything we don't understand -> the whole file.
+fn parse_range(h: Option<&str>, size: u64) -> Range {
+    let Some(r) = h.and_then(|h| h.trim().strip_prefix("bytes=")) else {
+        return Range::Full;
+    };
+    if r.contains(',') {
+        return Range::Full; // several ranges: sending everything is allowed
+    }
+    let Some((a, b)) = r.split_once('-') else {
+        return Range::Full;
+    };
+    let (a, b) = (a.trim(), b.trim());
+    let num = |x: &str| {
+        x.parse::<u64>()
+            .ok()
+            .filter(|_| x.bytes().all(|c| c.is_ascii_digit()))
+    };
+    let (start, end) = if a.is_empty() {
+        // the last n bytes
+        let Some(n) = num(b) else { return Range::Full };
+        if n == 0 || size == 0 {
+            return Range::Unsatisfiable;
+        }
+        (size - n.min(size), size - 1)
+    } else {
+        let Some(start) = num(a) else {
+            return Range::Full;
+        };
+        let end = if b.is_empty() {
+            u64::MAX
+        } else {
+            match num(b) {
+                Some(e) if e >= start => e,
+                _ => return Range::Full, // invalid: ignore it
+            }
+        };
+        if start >= size {
+            return Range::Unsatisfiable;
+        }
+        (start, end.min(size - 1))
+    };
+    Range::Part(start, end)
+}
+
 fn play(ctx: &Ctx, req: tiny_http::Request, p: &str) {
-    let root = format!("{}{}", ctx.lib.root, paths::SEP);
-    if !p.starts_with(&root) || !paths::isfile(p) || !is_audio(p) {
+    if !in_library(ctx, p) {
         let _ = req.respond(json_response(404, &json!({"error": "not found"})));
         return;
     }
@@ -435,20 +566,18 @@ fn play(ctx: &Ctx, req: tiny_http::Request, p: &str) {
         ".wav" => "audio/wav",
         _ => "application/octet-stream",
     };
-    let (mut start, mut end, mut code) = (0u64, size.saturating_sub(1), 200);
-    if let Some(r) = header(&req, "Range").and_then(|r| r.strip_prefix("bytes=")) {
-        let (a, b) = r.split_once('-').unwrap_or((r, ""));
-        if !a.is_empty() {
-            start = a.trim().parse().unwrap_or(0);
-            if let Ok(e) = b.trim().parse::<u64>() {
-                end = e.min(end);
-            }
-        } else if let Ok(n) = b.trim().parse::<u64>() {
-            start = size.saturating_sub(n);
+    let (start, end, code) = match parse_range(header(&req, "Range"), size) {
+        Range::Full => (0, size.saturating_sub(1), 200),
+        Range::Part(a, b) => (a, b, 206),
+        Range::Unsatisfiable => {
+            let r = Response::empty(StatusCode(416)).with_header(
+                Header::from_bytes("Content-Range", format!("bytes */{size}")).unwrap(),
+            );
+            let _ = req.respond(r);
+            return;
         }
-        code = 206;
-    }
-    let len = end.saturating_sub(start) + 1;
+    };
+    let len = if size == 0 { 0 } else { end - start + 1 };
     let _ = f.seek(SeekFrom::Start(start));
     let mut headers = vec![
         Header::from_bytes("Content-Type", ctype).unwrap(),
@@ -537,7 +666,7 @@ fn post(ctx: &Ctx, path: &str, b: &Value) -> (Value, bool) {
                 .unwrap_or("flac");
             json!({"files": lib.view().search(s(b, "q"), prefer)})
         }
-        "/api/copy" => start_copy(b),
+        "/api/copy" => start_copy(ctx, b),
         "/api/copied" => {
             let srcs: Vec<String> = b
                 .get("srcs")
@@ -548,7 +677,19 @@ fn post(ctx: &Ctx, path: &str, b: &Value) -> (Value, bool) {
                         .collect()
                 })
                 .unwrap_or_default();
-            json!({"copied": Ledger::copied(s(b, "dest"), &srcs).into_keys().collect::<Vec<_>>()})
+            let found = if s(b, "mode") == "usb" {
+                // a stick remembers per playlist folder
+                let stick = paths::abspath(&paths::expanduser(s(b, "dest")));
+                let folder = copy::usb_folder(&stick, s(b, "usb_name"));
+                if s(b, "dest").trim().is_empty() {
+                    Default::default()
+                } else {
+                    Ledger::copied_usb(&stick, &folder, &srcs)
+                }
+            } else {
+                Ledger::copied(s(b, "dest"), &srcs)
+            };
+            json!({"copied": found.into_keys().collect::<Vec<_>>()})
         }
         "/api/install_ffmpeg" if WINDOWS => {
             let mut st = FFMPEG_INSTALL.lock().unwrap();
@@ -615,7 +756,7 @@ fn install_ffmpeg() {
     *FFMPEG_INSTALL.lock().unwrap() = (false, log);
 }
 
-fn start_copy(b: &Value) -> Value {
+fn start_copy(ctx: &Ctx, b: &Value) -> Value {
     let dest_raw = s(b, "dest").trim();
     if dest_raw.is_empty() {
         return json!({"error": "Choose a destination folder first."});
@@ -628,7 +769,9 @@ fn start_copy(b: &Value) -> Value {
             a.iter()
                 .filter_map(|it| {
                     let src = it.get("src")?.as_str()?.to_string();
-                    paths::isfile(&src).then(|| Item {
+                    // reachable from the network: only songs from the library can be copied
+                    let ok = paths::isfile(&src) && (ctx.local_only || in_library(ctx, &src));
+                    ok.then(|| Item {
                         src,
                         rel: it
                             .get("rel")
@@ -691,7 +834,13 @@ fn start_copy(b: &Value) -> Value {
     let jid = id.clone();
     let count = plan.len();
     std::thread::spawn(move || {
-        let r: Transfer = copy::transfer(&plan, &dest, usb_format.as_deref(), |k, src| {
+        // what was copied is remembered per destination: the folder, or the stick's playlist folder
+        let key = if usb_format.is_some() {
+            target.clone()
+        } else {
+            dest.clone()
+        };
+        let r: Transfer = copy::transfer(&plan, &key, usb_format.as_deref(), |k, src| {
             if let Some(j) = JOBS.lock().unwrap().get_mut(&jid) {
                 j.n = k - 1;
                 j.current = paths::basename(src).to_string();
@@ -706,6 +855,7 @@ fn start_copy(b: &Value) -> Value {
             j.copied = r.copied;
             j.converted = r.converted;
             j.skipped = r.skipped;
+            j.unchecked = r.unchecked;
             j.errors = r.errors.clone();
             j.done_srcs = r.pairs.iter().map(|(s, _)| s.clone()).collect();
             match pl {
@@ -727,6 +877,84 @@ fn start_copy(b: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ranges_follow_the_standard() {
+        assert_eq!(parse_range(None, 100), Range::Full);
+        assert_eq!(parse_range(Some("bytes=0-9"), 100), Range::Part(0, 9));
+        assert_eq!(parse_range(Some("bytes=90-"), 100), Range::Part(90, 99));
+        assert_eq!(parse_range(Some("bytes=90-500"), 100), Range::Part(90, 99));
+        assert_eq!(parse_range(Some("bytes=-10"), 100), Range::Part(90, 99));
+        assert_eq!(parse_range(Some("bytes=-500"), 100), Range::Part(0, 99));
+        assert_eq!(parse_range(Some("bytes=100-"), 100), Range::Unsatisfiable);
+        assert_eq!(parse_range(Some("bytes=-0"), 100), Range::Unsatisfiable);
+        assert_eq!(parse_range(Some("bytes=50-10"), 100), Range::Full);
+        assert_eq!(parse_range(Some("bytes=abc"), 100), Range::Full);
+        assert_eq!(parse_range(Some("bytes=0-1,5-6"), 100), Range::Full);
+        assert_eq!(parse_range(Some("bytes=+5-9"), 100), Range::Full);
+        assert_eq!(parse_range(Some("bytes=0-"), 0), Range::Unsatisfiable);
+    }
+
+    #[allow(non_snake_case)]
+    fn HA(host: &str, local_only: bool) -> bool {
+        host_allowed(
+            host,
+            local_only,
+            &[
+                "dahlias-den".to_string(),
+                "dubplate.example.com".to_string(),
+            ],
+        )
+    }
+
+    #[test]
+    fn only_the_pages_own_address() {
+        assert!(HA("dahlias-den.fritz.box:8765", false)); // the machine's own name, any suffix
+        assert!(HA("dubplate.example.com", false)); // allowed with --allow-host
+        assert!(HA("myserver.lan.:8765", false)); // trailing dot
+        assert!(!HA("dahlias-den.fritz.box:8765", true)); // not reachable from the network: localhost only
+        assert!(!HA("dahlias-denx.evil.example", false));
+        assert!(HA("localhost:8765", true));
+        assert!(HA("127.0.0.1:8765", true));
+        assert!(HA("[::1]:8765", true));
+        assert!(!HA("evil.example:8765", true));
+        assert!(!HA("192.168.0.26:8765", true));
+        assert!(!HA("", true));
+        // reachable from the network: this machine's names and addresses, never a website's
+        assert!(HA("192.168.0.26:8765", false));
+        assert!(HA("dahlias-den:8765", false));
+        assert!(HA("dahlias-den.local:8765", false));
+        assert!(HA("[fe80::1]:8765", false));
+        assert!(!HA("evil.example:8765", false));
+        assert!(!HA("127.0.0.1.evil.example", false));
+        assert!(!HA("", false));
+    }
+
+    #[test]
+    fn preview_and_copies_stay_inside_the_library() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("Music");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("in.mp3"), b"x").unwrap();
+        std::fs::write(tmp.path().join("out.mp3"), b"x").unwrap();
+        let ctx = Ctx {
+            lib: Arc::new(Library::new(&root.to_string_lossy())),
+            dest: None,
+            local_only: true,
+            allow_hosts: vec![],
+        };
+        let r = root.to_string_lossy().into_owned();
+        assert!(in_library(&ctx, &paths::join(&r, "in.mp3")));
+        assert!(!in_library(
+            &ctx,
+            &paths::join(&r, &format!("..{}out.mp3", paths::SEP))
+        ));
+        assert!(!in_library(
+            &ctx,
+            &tmp.path().join("out.mp3").to_string_lossy()
+        ));
+        assert!(!in_library(&ctx, &paths::join(&r, "nope.mp3")));
+    }
 
     #[test]
     fn url_and_base64_decoding() {

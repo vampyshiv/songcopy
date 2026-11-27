@@ -16,6 +16,14 @@ already in the destination it's skipped, and a different file with the same name
 A single small program for Windows and Linux, written in Rust. Nothing else to install,
 and it updates itself.
 
+## Contents
+
+[Install](#install) · [Quick start](#quick-start) · [Using the web page](#using-the-web-page) ·
+[Terminal](#terminal) · [USB sticks for CDJs/XDJs](#usb-sticks-for-cdjs--xdjs) ·
+[What it remembers](#what-it-remembers) · [Windows](#windows-music-on-a-home-server) ·
+[How matching works](#how-matching-works) · [Troubleshooting](#troubleshooting) ·
+[Development](#development)
+
 ## Install
 
 Download the program for your computer from the [latest release](../../releases/latest):
@@ -39,31 +47,72 @@ and restarts. **Go back to …** in the page footer returns to the version you h
 - Untick **check automatically** to turn that off; **Check for updates** still works.
 - In a terminal: `dubplate update`, `dubplate update --check` or `dubplate update --rollback`.
 
-## Using it
+## Quick start
 
-### Web page (easiest)
+1. Run `dubplate` (or double-click it on Windows). Your browser opens its page.
+2. Drop your song list onto the page.
+3. Check what it found (green = found, orange = check it, purple = only another version,
+   red = missing).
+4. Pick **Copy to a folder** (e.g. your Traktor folder) or **Make a USB for the decks**, choose
+   where, and click the button.
+5. Later, after getting the missing songs, load the same list again: only the new ones
+   are copied.
+
+Every option on the page has a **?** next to it that explains it (hover, or tap on a phone),
+and **How dubplate works** at the top of the page is a short guide.
+
+## Using the web page
 
 ```
 dubplate
 ```
 
-This starts the tool and opens http://localhost:8765 in your browser.
+This starts dubplate and opens http://localhost:8765 in your browser. Keep the window it
+runs in open while you use the page; close it to stop. Running it again while it's already
+running just opens the page.
 
-1. **Drop in your list** (.csv, .xlsx, .txt, .m3u) or paste it. Rows pasted straight from
-   Excel or Google Sheets work too.
-2. **Check the results**, colour-coded:
-   - **Green, found**: an exact match.
-   - **Orange, best guess**: a close match (typo, odd spelling). Check it.
-   - **Purple, other version only**: you asked for, say, the *Extended Mix* but only own
-     the radio version or a remix. Shows what you have; **not copied unless you tick it**.
-   - **Red, not found**: with "did you mean" suggestions and a search box.
+### 1. Your song list
 
-   Every row has a ▶ button to listen first, and a menu to pick a different version.
-   **Download the missing songs as a CSV** saves the red and purple rows.
-3. **Choose a folder** and click **Copy**. Optional: keep Artist/Album folders, number the
-   files in list order (001, 002…), write a playlist file.
+Drop a file onto the page, or click to choose one, or paste the list:
 
-### Terminal
+- **Spreadsheets** (.csv, .tsv, .xlsx): a header row with **Artist**, **Title** (or Song /
+  Track / Name), **Album** and **File** (or Path), in any order. Spotify exports (e.g.
+  from Exportify) work as they are.
+- **Text files** (.txt), one song per line: `Artist - Title`, a file name, or a path.
+- **Playlists** (.m3u / .m3u8), including VLC-style `file:///…` entries and playlists made on
+  another computer (matched by name).
+- **Pasted** rows from Excel or Google Sheets, or `Artist - Title` lines.
+
+**If a song exists as both FLAC and MP3** picks which copy to use when you own both.
+
+### 2. Check what was found
+
+| Colour | Means | Copied? |
+|---|---|---|
+| **Green**, found | the exact song | yes |
+| **Orange**, best guess | a close match: a typo or a different spelling. Listen with ▶ to check | yes (untick to leave it out) |
+| **Purple**, other version only | you asked for e.g. the *Extended Mix* but only have the radio edit or a remix | **no**, unless you tick it |
+| **Red**, not found | not in your library; "Did you mean" suggestions and a search box help | no |
+
+- Click a coloured count to show only those songs.
+- Every song has a **▶** button to listen, and a menu listing the other versions you own.
+- **Download the missing songs as a CSV** saves the red and purple songs, with the closest
+  thing your library has: a shopping list.
+
+### 3. Where should they go?
+
+Two choices, each with its own destination, remembered separately:
+
+- **📁 Copy to a folder.** For your DJ software (e.g. the folder Traktor watches) or any
+  folder. Files are copied exactly as they are. Options:
+  - **Keep Artist / Album folders**: recreate your library's folders. Off: one flat folder.
+  - **Number files in list order**: `007 - …`, so the folder sorts in your list's order.
+  - **Also make a playlist file**: `playlist.m3u8`, for importing into DJ or music apps.
+- **💾 Make a USB for the decks.** See [USB sticks](#usb-sticks-for-cdjs--xdjs).
+
+Songs already copied to the chosen place are hidden; see [What it remembers](#what-it-remembers).
+
+## Terminal
 
 ```
 dubplate find  mylist.csv                       # check only, copies nothing
@@ -85,26 +134,20 @@ dubplate copy  mylist.xlsx /media/usb --number --playlist --prefer mp3
 | `--recopy` | also copy songs already copied to that destination on an earlier run |
 | `--dry-run` | show what would happen, copy nothing |
 | `--music PATH` | the library (default `~/Music`; on Windows the server's share) |
-| `serve --no-browser --dest FOLDER --host 0.0.0.0 --port N` | web page options |
+| `serve --no-browser --dest FOLDER --port N` | web page options |
+| `serve --host 0.0.0.0 [--allow-host NAME]` | open the page from other devices; see [below](#opening-the-page-from-another-device) |
 
 Songs it can't find are printed in red and saved next to your list as `<list>-missing.csv`.
 
-### Re-running a list: only new songs
+## USB sticks for CDJs / XDJs
 
-dubplate remembers what it copied to each destination. When you add the missing songs to
-your library and run the same list again, songs already copied there are hidden (web page)
-or skipped (terminal), so only the new finds get copied. A song is offered again if its
-copy is deleted, or if you pick a different destination. Use `--recopy`, or tick it on the
-page, to copy something again. The memory lives in `~/.cache/dubplate/copied.json`
-(Windows: `%LOCALAPPDATA%\dubplate\`). Nothing extra is written into the destination.
+Choose **💾 Make a USB for the decks** on the page (or `--usb` in the terminal) and pick the
+stick, or a folder on it.
 
-### USB stick for CDJs / XDJs
-
-Choose **USB stick for CDJs / XDJs** on the page (or `--usb` in the terminal) and pick the
-stick.
-
-- **One folder per playlist.** Songs are numbered in your list's order: `My set/001 - …`.
-  The number is the song's position in the list, so songs you add later slot into their place.
+- **One folder per set.** Songs go into the **playlist folder** you name (`Friday/001 - …`),
+  numbered in your list's order. The number is the song's position in the list, so songs you
+  add later slot into their place. Use a different folder name for each set; several sets can
+  live side by side on one stick.
 - **Converted only where needed.** MP3, AAC and 16/24-bit WAV/AIFF at 44.1/48 kHz are
   copied unchanged. Everything older Pioneer decks (XDJ-1000, CDJ-900/2000) can't play,
   meaning FLAC, ALAC, Opus/Ogg/WMA and hi-res, is converted to **AIFF** (lossless, default)
@@ -115,10 +158,36 @@ stick.
 Converting needs **ffmpeg**. On Windows the page has an **Install ffmpeg now** button
 (uses winget). On Linux: `sudo apt install ffmpeg`.
 
+If ffmpeg isn't installed, files that need converting can't be copied, but MP3, WAV and AIFF
+still are. With no ffprobe to check them, dubplate tells you how many WAV/AIFF files went
+over unchecked, since older decks only play those at 44.1/48 kHz, 16/24-bit.
+
 This is a plain-folder USB, not a rekordbox database USB, so there are no rekordbox
 playlists, waveforms or beat grids on the decks.
 
-### Windows: dubplate.exe (e.g. straight into a Traktor folder)
+Copies are written to a hidden temporary file and only get their real name once they're
+completely on the stick. A stick pulled out, or a window closed mid-copy, never leaves a
+half-written song behind under its real name.
+
+## What it remembers
+
+dubplate remembers what it copied **to each destination**: each folder, and each playlist
+folder on a stick.
+
+- **Load the same list again later** (after getting the missing songs) and only the new ones
+  are offered: songs already copied there are hidden on the page (click **✓ already copied**
+  to see them) and skipped in the terminal.
+- **A different destination has its own memory.** Songs you copied to your DJ folder still
+  go on a USB stick, and a set on the stick doesn't stop the same song going into another set.
+- A song is offered again if its copy has been deleted. To copy something again anyway,
+  tick it on the page, or use `--recopy`.
+- Nothing extra is written into your destinations. The memory, settings and a saved copy of
+  your library's song list live in `~/.cache/dubplate/` (Windows:
+  `%LOCALAPPDATA%\dubplate\`). Deleting that folder resets dubplate.
+- Settings and memory from **songcopy** (dubplate's old name) are brought over the first time
+  dubplate runs; the old folder is left in place.
+
+## Windows: music on a home server
 
 The music stays on the server; songs are copied over the network into a folder on the
 Windows PC. Double-click `dubplate-windows-x86_64.exe` (see [Install](#install)). It:
@@ -139,6 +208,20 @@ click **More info → Run anyway**.
 
 Moved the server to a new network? Make sure Samba (`hosts allow`) and the firewall allow
 the new network's addresses. dubplate finds the new address by itself.
+
+## Opening the page from another device
+
+By default the page only opens on the computer running dubplate. To open it from your phone
+or laptop too, start it with `dubplate serve --host 0.0.0.0` and visit
+`http://<that computer's name or address>:8765`.
+
+- Anyone on your network can then use it to copy songs from your library (never delete them).
+- **Only your songs can be copied from the network**, not other files on that computer.
+- The page answers when opened by this computer's address, its name
+  (`myserver`, `myserver.local`, `myserver.fritz.box`…) and local names (`.local`, `.lan`,
+  `.home`, `.internal`). It refuses public websites' names, so a website can't trick your
+  browser into using dubplate. Behind a reverse proxy with its own domain, allow that name
+  with `--allow-host dubplate.example.com`.
 
 ## How matching works
 
@@ -162,6 +245,27 @@ The library is read in about a second for 25,000 songs, and a list of 1,000 song
 matched in well under a second. The song list is saved, so the
 web page opens instantly and refreshes in the background, which matters over a network
 share. The saved list lives in `~/.cache/dubplate/` (or `%LOCALAPPDATA%\dubplate\` on Windows).
+
+## Troubleshooting
+
+- **"Windows protected your PC".** The app isn't code-signed. Click **More info → Run
+  anyway**; you only see this for the first download, not for updates.
+- **A song is red but you have it.** Click **Search the library myself…** under it, or check
+  the spelling against your file names. Matching reads file and folder names, not tags.
+  Then click **Rescan library** if you added it just now.
+- **A song is purple.** You don't have the exact version asked for (e.g. *Extended Mix*).
+  Tick it to copy the version you do have, or pick another from its menu.
+- **Songs I expected are hidden.** They were already copied to that destination. Click
+  **✓ already copied** to see them and tick any to copy again.
+- **The deck doesn't show the songs.** Use the deck's folder view (not its library/rekordbox
+  view), and a stick formatted as FAT32.
+- **"couldn't convert it - the file may be damaged".** ffmpeg couldn't read that file; try
+  playing it on the computer. Its message is included.
+- **"ffmpeg isn't installed".** On Windows click **Install ffmpeg now** on the page. On
+  Linux: `sudo apt install ffmpeg`.
+- **Windows can't find the server.** Make sure you can open `\\<server>\home\Music` in File
+  Explorer. On the server, Samba's `hosts allow` and the firewall must allow your network.
+- **Port 8765 is taken.** `dubplate serve --port 8766`.
 
 ## Development
 
@@ -187,7 +291,7 @@ cargo build --release  # target/release/dubplate
   updater shows them), then:
 
   ```
-  git tag v2.1.0 && git push origin v2.1.0
+  git tag v2.1.1 && git push origin v2.1.1
   ```
 
   The release gets both programs and a `SHA256SUMS` file the updater checks downloads against.

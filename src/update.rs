@@ -170,24 +170,47 @@ fn backup_dir() -> String {
     join(&paths::app_dir(), "previous")
 }
 
-/// the version kept for "Go back", if any
+const SUFFIX: &str = if cfg!(windows) { ".exe" } else { "" };
+
+/// the version kept for "Go back", if any. Also finds the copy songcopy (dubplate's old name)
+/// kept when it updated itself onto dubplate.
 pub fn previous() -> Option<(String, String)> {
-    let rd = std::fs::read_dir(backup_dir()).ok()?;
-    for e in rd.flatten() {
-        let name = e.file_name().to_string_lossy().into_owned();
-        if let Some(v) = name
-            .strip_prefix("dubplate-")
-            .map(|v| v.trim_end_matches(".exe").to_string())
-        {
-            if v != VERSION {
-                return Some((v, e.path().to_string_lossy().into_owned()));
+    let dirs = [
+        (backup_dir(), "dubplate-"),
+        (join(&paths::app_dir(), "previous.new"), "dubplate-"), // a swap that didn't finish tidying up
+        (
+            join(&join(&paths::app_base(), "songcopy"), "previous"),
+            "songcopy-",
+        ),
+    ];
+    for (dir, prefix) in dirs {
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let Some(v) = name
+                .strip_prefix(prefix)
+                .and_then(|v| v.strip_suffix(SUFFIX).or(Some(v)))
+            else {
+                continue;
+            };
+            if v != VERSION && semver::Version::parse(v).is_ok() && e.path().is_file() {
+                return Some((v.to_string(), e.path().to_string_lossy().into_owned()));
             }
         }
     }
     None
 }
 
+static WRITABLE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
+/// can this program replace its own file? It writes a test file next to itself; a "yes" is
+/// remembered, a "no" is checked again next time (the user may have fixed the folder)
 fn can_replace_self() -> Result<(), String> {
+    if WRITABLE.get().is_some() {
+        return Ok(());
+    }
     let exe = exe_path().map_err(|e| e.to_string())?;
     let dir = exe
         .parent()
@@ -196,6 +219,7 @@ fn can_replace_self() -> Result<(), String> {
     std::fs::write(&probe, b"")
         .map_err(|_| format!("dubplate's folder ({}) isn't writable", dir.display()))?;
     let _ = std::fs::remove_file(probe);
+    let _ = WRITABLE.set(());
     Ok(())
 }
 
@@ -299,50 +323,81 @@ pub fn apply() -> Result<String, String> {
 
 /// keep the running version for "Go back", then swap the new one in
 fn install(new_exe: &[u8], version: &str) -> Result<(), String> {
-    let exe = exe_path().map_err(|e| e.to_string())?;
-    let bdir = backup_dir();
-    let _ = std::fs::remove_dir_all(&bdir);
-    std::fs::create_dir_all(&bdir).map_err(|e| e.to_string())?;
-    let suffix = if cfg!(windows) { ".exe" } else { "" };
-    std::fs::copy(&exe, join(&bdir, &format!("dubplate-{VERSION}{suffix}")))
-        .map_err(|e| format!("couldn't keep a backup ({e})"))?;
-    let tmp = join(
-        &paths::app_dir(),
-        &format!("dubplate-{version}-download{suffix}"),
-    );
-    std::fs::write(&tmp, new_exe).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755));
-    }
-    let r =
-        self_replace::self_replace(&tmp).map_err(|e| format!("couldn't replace dubplate ({e})"));
-    let _ = std::fs::remove_file(&tmp);
-    r
+    swap(new_exe, version, "download")
 }
 
-/// go back to the version that was kept when updating
+/// go back to the version that was kept when updating (the current one is kept in turn,
+/// so you can go forward again)
 pub fn rollback() -> Result<String, String> {
     let (v, path) = previous().ok_or("there's no earlier version to go back to")?;
     can_replace_self()?;
     let data = std::fs::read(&path).map_err(|e| e.to_string())?;
-    let exe = exe_path().map_err(|e| e.to_string())?;
-    let suffix = if cfg!(windows) { ".exe" } else { "" };
-    let keep = join(&backup_dir(), &format!("dubplate-{VERSION}{suffix}"));
-    let _ = std::fs::copy(&exe, &keep);
-    let tmp = join(&paths::app_dir(), &format!("dubplate-{v}-rollback{suffix}"));
-    std::fs::write(&tmp, &data).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755));
+    swap(&data, &v, "rollback")?;
+    // going back to songcopy (dubplate's old name): it only looks in its own folder, so leave
+    // this version there too - then songcopy offers "Go back" to dubplate again
+    if path.contains(&format!("{}songcopy{}", paths::SEP, paths::SEP)) {
+        if let Ok(exe) = std::fs::read(join(&backup_dir(), &format!("dubplate-{VERSION}{SUFFIX}")))
+        {
+            let dir = paths::dirname(&path).to_string();
+            let _ = std::fs::write(join(&dir, &format!("songcopy-{VERSION}{SUFFIX}")), exe);
+        }
     }
-    let r =
-        self_replace::self_replace(&tmp).map_err(|e| format!("couldn't replace dubplate ({e})"));
+    Ok(v)
+}
+
+/// Replace this program with `new_exe`, keeping the current version for "Go back".
+/// The old backup is only dropped once the swap has worked, so a failure never loses it.
+fn swap(new_exe: &[u8], version: &str, what: &str) -> Result<(), String> {
+    let exe = exe_path().map_err(|e| e.to_string())?;
+    // the Windows swap moves the running program aside before copying the new one in:
+    // make sure there's room for both, so it can't be left half done
+    let dir = exe
+        .parent()
+        .map(|d| d.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let need = new_exe.len() as u64 * 2 + (16 << 20);
+    if crate::server::free_space(&dir) < need {
+        return Err(format!(
+            "not enough free space next to dubplate (needs {})",
+            paths::human(need)
+        ));
+    }
+    let app = paths::app_dir();
+    let staged = join(&app, "previous.new");
+    let _ = std::fs::remove_dir_all(&staged);
+    std::fs::create_dir_all(&staged).map_err(|e| e.to_string())?;
+    std::fs::copy(&exe, join(&staged, &format!("dubplate-{VERSION}{SUFFIX}")))
+        .map_err(|e| format!("couldn't keep a backup ({e})"))?;
+    let tmp = join(&app, &format!("dubplate-{version}-{what}{SUFFIX}"));
+    let r = (|| {
+        std::fs::write(&tmp, new_exe).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755));
+        }
+        self_replace::self_replace(&tmp).map_err(|e| format!("couldn't replace dubplate ({e})"))
+    })();
     let _ = std::fs::remove_file(&tmp);
-    let _ = std::fs::remove_file(&path);
-    r.map(|_| v)
+    if r.is_err() {
+        let _ = std::fs::remove_dir_all(&staged); // the old backup stays as it was
+        return r;
+    }
+    // the new backup takes the old one's place; the old one is only removed once that worked
+    let old = join(&app, "previous.old");
+    let _ = std::fs::remove_dir_all(&old);
+    let had_old = std::fs::rename(backup_dir(), &old).is_ok();
+    if std::fs::rename(&staged, backup_dir()).is_ok() {
+        let _ = std::fs::remove_dir_all(&old);
+    } else if had_old {
+        let _ = std::fs::rename(&old, backup_dir()); // keep what was there; previous() also looks in previous.new
+    }
+    Ok(())
+}
+
+/// was this process started by restart()? (songcopy, dubplate's old name, used SONGCOPY_RESTART)
+pub fn is_restart() -> bool {
+    std::env::var_os("DUBPLATE_RESTART").is_some() || std::env::var_os("SONGCOPY_RESTART").is_some()
 }
 
 /// start the (new) program again in place of this one, keeping the window
@@ -353,7 +408,10 @@ pub fn restart() -> ! {
         args.push("--no-browser".into());
     }
     let mut cmd = std::process::Command::new(exe);
-    cmd.args(&args).env("DUBPLATE_RESTART", "1");
+    // both names, so going back to a songcopy version also knows it's a restart
+    cmd.args(&args)
+        .env("DUBPLATE_RESTART", "1")
+        .env("SONGCOPY_RESTART", "1");
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;

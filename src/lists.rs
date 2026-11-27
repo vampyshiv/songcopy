@@ -254,6 +254,8 @@ pub fn read_m3u(text: &str) -> Vec<Request> {
         if line.starts_with('#') {
             continue;
         }
+        let line = file_uri_to_path(line);
+        let line = line.as_str();
         let label = extinf
             .clone()
             .filter(|e| !e.is_empty())
@@ -274,6 +276,55 @@ pub fn read_m3u(text: &str) -> Vec<Request> {
         extinf = None;
     }
     out
+}
+
+/// "file:///home/me/My%20Song.mp3" (how VLC and some apps save playlists) -> a normal path
+fn file_uri_to_path(line: &str) -> String {
+    if line.len() < 7 || !line[..7].eq_ignore_ascii_case("file://") {
+        return line.to_string();
+    }
+    let rest = &line[7..];
+    // "file://localhost/home/x.mp3" = "file:///home/x.mp3" (the local computer)
+    let rest = if rest.len() > 9 && rest[..10].eq_ignore_ascii_case("localhost/") {
+        &rest[9..]
+    } else {
+        rest
+    };
+    let drive = |p: &str| {
+        let b = p.as_bytes();
+        b.len() >= 2 && b[1] == b':' && b[0].is_ascii_alphabetic()
+    };
+    // file:///C:/Music/x.mp3 and file://C:/Music/x.mp3 -> C:/Music/x.mp3 ;
+    // file:///home/x.mp3 -> /home/x.mp3 ; file://server/share/x -> //server/share/x
+    let rest = if let Some(p) = rest.strip_prefix('/') {
+        if drive(p) {
+            p.to_string()
+        } else {
+            format!("/{p}")
+        }
+    } else if drive(rest) {
+        rest.to_string()
+    } else {
+        format!("//{rest}")
+    };
+    let bytes = rest.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(v) = u8::from_str_radix(
+                std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or("zz"),
+                16,
+            ) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn read_xlsx(data: &[u8]) -> Result<Vec<Vec<String>>, String> {
@@ -342,6 +393,17 @@ mod tests {
             (r[0].artist.as_str(), r[0].title.as_str()),
             ("Robyn", "Honey")
         );
+        let r = read_m3u(
+            "file:///home/me/A%20-%20B%C3%B6.mp3\nfile:///C:/M/x%2.mp3\nfile://nas/share/y.mp3\n",
+        );
+        assert_eq!(r[0].path, "/home/me/A - Bö.mp3");
+        assert_eq!(r[1].path, "C:/M/x%2.mp3"); // a bad escape is left alone
+        assert_eq!(r[2].path, "//nas/share/y.mp3");
+        let r =
+            read_m3u("file://localhost/Users/me/a.mp3\nFILE:///home/b.mp3\nfile://C:/M/c.mp3\n");
+        assert_eq!(r[0].path, "/Users/me/a.mp3");
+        assert_eq!(r[1].path, "/home/b.mp3");
+        assert_eq!(r[2].path, "C:/M/c.mp3");
     }
 
     #[test]

@@ -2,6 +2,43 @@
 
 Each version's notes are shown in dubplate's update card before you install it.
 
+## 2.1.1
+
+**Making a USB after copying to your DJ folder now works the way you'd expect.** Step 3 is
+two clear choices, **📁 Copy to a folder** and **💾 Make a USB for the decks**, each with its
+own destination and its own memory. Songs you copied to your DJ folder still go on the stick.
+Each playlist folder on a stick has its own memory too, so a song can be in several sets.
+
+**Help everywhere.** Every option has a **?** that explains it (hover, or tap on a phone),
+and **How dubplate works** at the top of the page is a short guide.
+
+**A big round of bug fixes** (found by two full code reviews and by deliberately breaking
+things):
+
+- A copy cut off midway (stick full or pulled out, window closed) no longer leaves a broken
+  song under its real name. Copies are written to a temporary file first and are only
+  renamed once they're completely on the disk.
+- Copying never replaces an existing file, even one created at the same moment.
+- Very long file names (one in a 25,000-song library was 253 characters) no longer fail
+  when numbered or put on a USB.
+- USB without ffmpeg still copies MP3, WAV and AIFF instead of failing everything. With
+  ffmpeg but no ffprobe, FLAC is still converted.
+- Converted files are really written to the stick on Windows before they count as done.
+- A different song with the same name and size is no longer mistaken for "already there",
+  and re-runs don't create "(3)", "(4)"… copies.
+- VLC-style playlists (`file:///…`) are read.
+- macOS "._" leftover files aren't counted as songs; a folder that links back into itself
+  no longer lists songs dozens of times. Band names starting with a dot (".38 Special") are
+  kept.
+- The page is safer when opened from other devices (`--host 0.0.0.0`): other websites can't
+  use it, only songs from your library can be copied, and previews can't reach files outside
+  it. New `--allow-host` option for a reverse-proxy domain.
+- Updates: a failed update or "Go back" never loses the backup; "Go back" also works after
+  updating from songcopy, and back again.
+- Settings and the copy memory can no longer be corrupted by two windows saving at the same
+  moment.
+- Clearer error messages when a file can't be converted.
+
 ## 2.1.0
 
 **songcopy is now called dubplate.** A dubplate is a one-off record cut just for a DJ to

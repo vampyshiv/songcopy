@@ -62,11 +62,50 @@ td select{width:100%}
 .banner{border-radius:10px;padding:12px 14px;margin-top:12px}
 .banner.ok{background:var(--ok-bg);color:var(--ok)}.banner.bad{background:var(--bad-bg);color:var(--bad)}
 .hidden{display:none!important}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:4px 0 16px}
+@media (max-width:640px){.tabs{grid-template-columns:1fr}}
+.tab{text-align:left;padding:12px 14px;border:2px solid var(--line);border-radius:12px;background:var(--bg);display:flex;flex-direction:column;gap:3px}
+.tab b{font-size:15.5px}.tab span{font-size:13px;color:var(--mute)}
+.tab.active{border-color:var(--acc);background:var(--card);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 18%,transparent)}
+.fieldlabel{display:block;font-weight:600;font-size:14px;margin:0 0 6px}
+.tip{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;border:1px solid var(--line);color:var(--mute);background:var(--card);
+ font:700 11px/1 system-ui,sans-serif;cursor:help;margin-left:5px;vertical-align:1px;padding:0;flex:none}
+.tip:hover,.tip:focus-visible,.tip.on{border-color:var(--acc);color:var(--acc);outline:none}
+#tipbox{position:fixed;z-index:50;max-width:min(340px,calc(100vw - 24px));background:var(--ink);color:var(--bg);padding:9px 11px;border-radius:9px;
+ font:400 13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.25);pointer-events:none}
+details.help{margin:0 0 18px;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:10px 16px}
+details.help summary{cursor:pointer;font-weight:600}
+details.help h3{font-size:14.5px;margin:14px 0 4px}
+details.help p,details.help li{font-size:14px;color:var(--ink);margin:4px 0}
+details.help ul{padding-left:20px;margin:4px 0}
+.legend{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:0}
 .err{color:var(--bad);margin-top:8px}
 </style></head><body><main>
 <h1>Dubplate</h1>
 <p class="sub">Give it a list of songs. It finds them in <b id="root">your music folder</b> and copies them to another folder.
-It only copies, so nothing in your library is moved or deleted. <span id="libinfo" class="small"></span> <a href="#" id="rescan" class="small">Rescan library</a></p>
+It only copies, so nothing in your library is moved or deleted. <span id="libinfo" class="small"></span> <a href="#" id="rescan" class="small">Rescan library</a><button type="button" class="tip" data-tip="Read your music folder again, e.g. after adding songs. dubplate also does this by itself every time it starts.">?</button></p>
+
+<details class="help" id="help"><summary>How dubplate works</summary>
+<h3>1. Give it a list</h3>
+<p>Drop a spreadsheet (.csv, .xlsx), a text file with one song per line ("Artist - Title"), or a playlist (.m3u). You can also paste rows straight from Excel or Google Sheets. A Spotify export (e.g. from Exportify) works as it is.</p>
+<h3>2. Check what it found</h3>
+<ul>
+<li><span class="legend" style="background:var(--ok)"></span><b>Found</b>: the exact song.</li>
+<li><span class="legend" style="background:var(--warn)"></span><b>Best guess</b>: a close match (a typo, a different spelling). Listen with ▶ to make sure.</li>
+<li><span class="legend" style="background:var(--alt)"></span><b>Other version only</b>: you asked for, say, the <i>Extended Mix</i> but only have the radio version or a remix. Shown so you know, but <b>not copied</b> unless you tick it.</li>
+<li><span class="legend" style="background:var(--bad)"></span><b>Not found</b>: not in your music folder. <b>Download the missing songs as a CSV</b> to keep a shopping list.</li>
+</ul>
+<p>Every song has a ▶ button to listen first, and a menu to pick a different version you own.</p>
+<h3>3. Send them somewhere</h3>
+<ul>
+<li><b>Copy to a folder</b> (e.g. your Traktor music folder): the files are copied exactly as they are.</li>
+<li><b>Make a USB for the decks</b>: one numbered playlist folder on the stick. Anything older CDJs/XDJs can't play (FLAC, Opus, ALAC, hi-res) is converted to AIFF or MP3; tags and artwork are kept. On the deck, browse the stick in its <b>folder</b> view.</li>
+</ul>
+<h3>It remembers what it copied</h3>
+<p>Each destination has its own memory. Songs already copied to that folder (or that stick) are hidden, so after you've added missing songs to your library you can load the same list again and only the new ones are copied. A song you copied to your DJ folder still shows up for the USB, because the stick has its own memory. Click <b>✓ already copied</b> to see them, and tick one to copy it again.</p>
+<h3>It never changes your library</h3>
+<p>dubplate only ever copies. It never moves, deletes or overwrites a file: if a file with the same name is already there it's left alone, and a different one gets " (2)" added. Its own memory and settings live in <code id="appdir">its settings folder</code>.</p>
+</details>
 
 <section class="card hidden" id="updcard" style="border-color:var(--acc)">
   <div class="row" style="justify-content:space-between"><h2 style="font-size:17px;margin:0" id="updtitle"></h2>
@@ -80,46 +119,50 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
   <div class="drop" id="drop"><strong>Drop a file here</strong> or click to choose<br>
   <span class="small">Spreadsheet (.csv, .xlsx), text file (one song per line), or playlist (.m3u)</span></div>
   <input type="file" id="file" class="hidden" accept=".csv,.tsv,.txt,.xlsx,.m3u,.m3u8">
-  <details style="margin-top:10px"><summary class="small" style="cursor:pointer">…or paste a list</summary>
+  <details style="margin-top:10px"><summary class="small" style="cursor:pointer">…or paste a list <button type="button" class="tip" data-tip="One song per line, like “Robyn - Dancing On My Own”. You can also paste rows copied from Excel or Google Sheets: a first row with column names (Artist, Title, Album…) helps, in any order.">?</button></summary>
   <textarea id="paste" placeholder="Depeche Mode - World in My Eyes&#10;Robyn - Dancing On My Own&#10;Sigur Rós - Rembihnútur"></textarea>
   <div class="row" style="margin-top:8px"><button id="pastego">Find these songs</button></div></details>
   <div class="opts"><label>If a song exists as both FLAC and MP3, use
-    <select id="prefer"><option value="flac">FLAC (best quality)</option><option value="mp3">MP3 (smaller, plays anywhere)</option><option value="any">Either one</option></select></label></div>
+    <select id="prefer"><option value="flac">FLAC (best quality)</option><option value="mp3">MP3 (smaller, plays anywhere)</option><option value="any">Either one</option></select></label>
+    <button type="button" class="tip" data-tip="When your library has the same song in more than one format, which copy to use. FLAC sounds best but is bigger. MP3 plays on everything. (For a USB stick, FLAC is converted for the decks anyway.) The original album version is always preferred over live recordings and compilations.">?</button></div>
   <div id="loaderr" class="err"></div>
 </section>
 
 <section class="card hidden" id="results">
-  <div class="step"><b>2</b><h2>Check what was found</h2></div>
+  <div class="step"><b>2</b><h2>Check what was found</h2>
+  <button type="button" class="tip" data-tip="Green: the exact song. Orange: a close match, check it. Purple: you don't have that version (e.g. the Extended Mix), only another one - not copied unless you tick it. Red: not in your library. Click a coloured count to show only those songs.">?</button></div>
   <div class="summary" id="summary"></div>
   <div class="row" style="margin-bottom:10px"><button id="dlmissing" class="hidden">⬇ Download the missing songs as a CSV</button>
+    <button type="button" class="tip" id="dltip" data-tip="A spreadsheet of the red (not found) and purple (other version only) songs, with the closest thing your library has. A shopping list for what to get next.">?</button>
     <span class="small" id="filterinfo"></span></div>
-  <div class="tablewrap"><table><thead><tr><th style="width:28px"><input type="checkbox" id="all" checked title="select all"></th><th>#</th><th>On your list</th><th>File that will be copied</th></tr></thead>
+  <div class="tablewrap"><table><thead><tr><th style="width:28px"><input type="checkbox" id="all" checked title="select all"></th><th>#</th><th>On your list</th><th>File that will be copied <button type="button" class="tip" data-tip="▶ plays the file. The menu under a song lists other versions you own; pick one to use it instead. Untick a song to leave it out.">?</button></th></tr></thead>
   <tbody id="tbody"></tbody></table></div>
 </section>
 
 <section class="card hidden" id="copycard">
-  <div class="step"><b>3</b><h2>Copy them to</h2></div>
-  <p class="small" style="margin:-4px 0 10px">Songs already copied to this folder on an earlier run are hidden, so after adding missing songs to your library you can re-run the same list and only copy the new ones.</p>
-  <div class="row"><input type="text" id="dest" placeholder="/home/you/Desktop/Party mix" spellcheck="false">
+  <div class="step"><b>3</b><h2>Where should they go?</h2></div>
+  <div class="tabs" role="tablist">
+    <button type="button" class="tab" role="tab" id="tab_files" data-mode="files"><b>📁 Copy to a folder</b>
+      <span>For your DJ software (e.g. Traktor's music folder) or any folder. Files are copied exactly as they are.</span></button>
+    <button type="button" class="tab" role="tab" id="tab_usb" data-mode="usb"><b>💾 Make a USB for the decks</b>
+      <span>A stick for CDJs/XDJs: one numbered playlist folder, and anything older decks can't play is converted.</span></button>
+  </div>
+  <label class="fieldlabel" for="dest"><span id="destlabel">Folder to copy into</span><button type="button" class="tip" id="desttip">?</button></label>
+  <div class="row"><input type="text" id="dest" spellcheck="false">
   <button id="browse">Browse…</button></div>
   <div class="browser" id="browser"></div>
-  <div class="opts" style="color:var(--ink)">
-    <label><input type="radio" name="mode" value="files" id="mode_files" checked> Copy the files as they are</label>
-    <label><input type="radio" name="mode" value="usb" id="mode_usb"> USB stick for CDJs / XDJs</label>
-  </div>
+  <p class="small" id="memnote" style="margin:8px 0 0"></p>
   <div class="opts" id="filesopts">
-    <label><input type="checkbox" id="folders"> Keep Artist / Album folders</label>
-    <label><input type="checkbox" id="number"> Number files in list order (001, 002…)</label>
-    <label><input type="checkbox" id="playlist"> Also make a playlist file</label>
+    <label><input type="checkbox" id="folders"> Keep Artist / Album folders</label><button type="button" class="tip" data-tip="Recreate your library's Artist/Album folders inside the destination. Off: all songs go into one folder.">?</button>
+    <label><input type="checkbox" id="number"> Number files in list order (001, 002…)</label><button type="button" class="tip" data-tip="Put each song's position in your list in front of its name (“007 - …”), so the folder sorts in your list's order. Songs you add to the list later slot into their own place.">?</button>
+    <label><input type="checkbox" id="playlist"> Also make a playlist file</label><button type="button" class="tip" data-tip="Write playlist.m3u8 into the folder, in your list's order. Most DJ and music apps (Traktor, rekordbox, VLC…) can import it.">?</button>
   </div>
   <div id="usbopts" class="hidden">
-    <div class="opts"><label>Playlist folder on the stick <input type="text" id="usb_name" style="min-width:12em" spellcheck="false"></label>
-      <label>Songs the decks can't play (FLAC, Opus…) become
-      <select id="usb_format"><option value="aiff">AIFF (lossless)</option><option value="mp3">MP3 320 kbps (smaller)</option></select></label></div>
-    <p class="small" style="margin:8px 0 0">Pick the USB stick (or a folder on it) above. Songs go into one folder, numbered in your list's order,
-    and anything an older deck (XDJ-1000, CDJ-900/2000) can't play is converted; tags and artwork are kept. On the deck, browse the stick with its
-    <b>folder</b> view. Use a stick formatted as <b>FAT32</b>, the one format every Pioneer deck reads.
-    <span id="noffmpeg" class="hidden" style="color:var(--bad)"><br>ffmpeg isn't installed on this computer, so songs that need converting will fail. <span id="ffmpeghelp">Install ffmpeg, then restart Dubplate.</span></span></p>
+    <div class="opts"><label>Playlist folder on the stick <input type="text" id="usb_name" style="min-width:12em" spellcheck="false"></label><button type="button" class="tip" data-tip="The songs go into this folder on the stick, numbered in your list's order (001, 002…), so the deck's folder view plays them in order. Use a different name for each set.">?</button>
+      <label>Songs the decks can't play become
+      <select id="usb_format"><option value="aiff">AIFF (lossless)</option><option value="mp3">MP3 320 kbps (smaller)</option></select></label><button type="button" class="tip" data-tip="Older Pioneer decks (CDJ-900/2000, XDJ-1000, XDJ-RX) can't play FLAC, ALAC, Opus/Ogg or hi-res files. Those are converted: AIFF keeps the full quality (bigger files), MP3 320 is about a quarter of the size and sounds the same to nearly everyone. MP3, AAC, WAV and AIFF that the decks already play are copied unchanged. Tags and artwork are kept.">?</button></div>
+    <p class="small" style="margin:8px 0 0">On the deck, browse the stick with its <b>folder</b> view. Use a stick formatted as <b>FAT32</b>, the one format every Pioneer deck reads.
+    <span id="noffmpeg" class="hidden" style="color:var(--bad)"><br>ffmpeg isn't installed on this computer, so songs that need converting can't be copied (MP3, WAV and AIFF still are). <span id="ffmpeghelp">Install ffmpeg, then restart dubplate.</span></span></p>
   </div>
   <div class="row" style="margin-top:14px"><button class="primary" id="go">Copy songs</button><span class="small" id="gohint"></span></div>
   <div id="progress" class="hidden"><div class="bar"><i id="barfill"></i></div><div class="small" id="ptext"></div></div>
@@ -127,9 +170,10 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
 </section>
 <p class="small" style="text-align:center;margin-top:24px"><span id="ver"></span> ·
  <a href="#" id="updcheck">Check for updates</a> ·
- <label style="cursor:pointer"><input type="checkbox" id="updauto"> check automatically</label>
+ <label style="cursor:pointer"><input type="checkbox" id="updauto"> check automatically</label><button type="button" class="tip" data-tip="At most every 6 hours dubplate asks GitHub whether a new version is out, and shows what's new before you install it. Nothing else is sent. Updates are checked against the release's checksum, and “Go back” returns to the version you had.">?</button>
  <span id="updback"></span><br><span id="updstatus"></span></p>
 </main>
+<div id="tipbox" class="hidden" role="tooltip"></div>
 <audio id="audio"></audio>
 <script>
 const $=s=>document.querySelector(s);
@@ -137,24 +181,49 @@ let RESULTS=[], FILTER=null, LISTNAME='list';
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const kb=n=>n>1e9?(n/1073741824).toFixed(1)+' GB':(n/1048576).toFixed(1)+' MB';
 async function api(p,body){const r=await fetch(p,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});return r.json()}
-const KEEP=['dest','prefer','folders','number','playlist','usb_format','mode_usb'];
-try{for(const k of KEEP){const v=localStorage.getItem('sc_'+k);if(v==null)continue;const el=$('#'+k);(el.type==='checkbox'||el.type==='radio')?el.checked=v==='1':el.value=v}}catch(e){}
-if($('#mode_usb').checked)$('#mode_files').checked=false;
-function remember(){try{for(const k of KEEP){const el=$('#'+k);localStorage.setItem('sc_'+k,(el.type==='checkbox'||el.type==='radio')?(el.checked?'1':'0'):el.value)}}catch(e){}}
-const usbMode=()=>$('#mode_usb').checked;
-function showMode(){$('#filesopts').classList.toggle('hidden',usbMode());$('#usbopts').classList.toggle('hidden',!usbMode());if(RESULTS.length)render()}
-document.querySelectorAll('input[name=mode]').forEach(r=>r.addEventListener('change',()=>{remember();showMode()}));
+const KEEP=['prefer','folders','number','playlist','usb_format'];
+const store={get:k=>{try{return localStorage.getItem('sc_'+k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem('sc_'+k,v)}catch(e){}}};
+for(const k of KEEP){const v=store.get(k);if(v==null)continue;const el=$('#'+k);el.type==='checkbox'?el.checked=v==='1':el.value=v}
+// each kind of destination remembers its own folder (older versions kept one shared "dest")
+let MODE=store.get('mode')||(store.get('mode_usb')==='1'?'usb':'files');
+// (an old shared "dest" goes to the tab that was in use)
+const OLDUSB=store.get('mode_usb')==='1',OLD=store.get('dest')??'';
+const DEST={files:store.get('dest_files')??(OLDUSB?'':OLD),usb:store.get('dest_usb')??(OLDUSB?OLD:'')};
+function remember(){for(const k of KEEP){const el=$('#'+k);store.set(k,el.type==='checkbox'?(el.checked?'1':'0'):el.value)}
+ store.set('dest_files',DEST.files);store.set('dest_usb',DEST.usb);store.set('mode',MODE)}
+const usbMode=()=>MODE==='usb';
+const PLACE=()=>usbMode()?'this stick':'this folder';
+const TIP_DEST={files:'The folder the songs are copied into, e.g. the music folder Traktor (or your DJ software) watches. Click Browse… to pick it. dubplate remembers it.',
+ usb:'Your USB stick, or a folder on it. dubplate makes the playlist folder (below) inside it. Pick the stick itself to keep every set side by side.'};
+function showMode(){
+ $('#tab_files').classList.toggle('active',!usbMode());$('#tab_usb').classList.toggle('active',usbMode());
+ $('#tab_files').setAttribute('aria-selected',!usbMode());$('#tab_usb').setAttribute('aria-selected',usbMode());
+ $('#filesopts').classList.toggle('hidden',usbMode());$('#usbopts').classList.toggle('hidden',!usbMode());
+ $('#destlabel').textContent=usbMode()?'USB stick (or a folder on it)':'Folder to copy into';
+ $('#desttip').dataset.tip=TIP_DEST[MODE];
+ $('#dest').value=DEST[MODE];$('#dest').placeholder=usbMode()?(window.INFO&&INFO.windows?'E:\\':'/media/you/USB'):(window.INFO?INFO.example:'');
+ $('#memnote').textContent=usbMode()
+  ?'Songs already on this stick are hidden. The stick has its own memory, so songs you copied to your DJ folder still go on it.'
+  :'Songs already copied to this folder are hidden, so after you add missing songs to your library you can load the same list again and only the new ones are copied. The USB tab keeps its own memory.';
+ $('#browser').style.display='none';if(RESULTS.length){render();checkCopied()}}
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{if(MODE===t.dataset.mode)return;MODE=t.dataset.mode;showMode();remember()}));
 $('#usb_format').addEventListener('change',remember);
 // songs already copied to the chosen folder (earlier runs) are hidden
-let CHECKT=null;
+let CHECKT=null,CHECKN=0;
 async function checkCopied(){const dest=$('#dest').value.trim();const srcs=RESULTS.filter(r=>r.file).map(r=>r.file.path);
- if(!srcs.length)return;const res=dest?await api('/api/copied',{dest,srcs}):{copied:[]};const got=new Set(res.copied);
+ if(!srcs.length)return;const my=++CHECKN;
+ const res=dest?await api('/api/copied',{dest,srcs,mode:MODE,usb_name:$('#usb_name').value}):{copied:[]};
+ if(my!==CHECKN)return; // the tab or folder changed meanwhile: a newer check is on its way
+ const got=new Set(res.copied);
  RESULTS.forEach(r=>{const was=r.copied;r.copied=!!(r.file&&got.has(r.file.path));if(r.copied)r.checked=false;else if(was)r.checked=r.status==='found'||r.status==='guess'});render()}
 $('#dest').addEventListener('input',()=>{clearTimeout(CHECKT);CHECKT=setTimeout(checkCopied,500)});
+$('#usb_name').addEventListener('input',()=>{clearTimeout(CHECKT);CHECKT=setTimeout(checkCopied,500)}); // a stick remembers per playlist folder
 async function info(){const i=await api('/api/info');$('#root').textContent=i.root;
  if(!i.ready){$('#libinfo').textContent=`(reading your library for the first time… ${i.progress.toLocaleString()} songs so far)`;$('#rescan').classList.add('hidden')}
  else{$('#libinfo').textContent=`(${i.count.toLocaleString()} songs, checked ${i.scanned}${i.scanning?' · looking for new songs…':''})`;$('#rescan').classList.toggle('hidden',i.scanning)}
- if(!$('#dest').value&&i.dest){$('#dest').value=i.dest}$('#dest').placeholder=i.example;
+ window.INFO=i;if(!DEST.files&&i.dest){DEST.files=i.dest;if(!usbMode())$('#dest').value=i.dest}if(!usbMode())$('#dest').placeholder=i.example;
+ if(i.appdir)$('#appdir').textContent=i.appdir;
+ if(usbMode()&&!$('#dest').value)$('#dest').placeholder=i.windows?'E:\\':'/media/you/USB';
  $('#noffmpeg').classList.toggle('hidden',!!i.ffmpeg);
  if(!i.ffmpeg&&i.windows)$('#ffmpeghelp').innerHTML=i.ffmpeg_installing?'Installing ffmpeg… (about a minute)':
    `<button id="getffmpeg">Install ffmpeg now</button> <span class="small">free, about a minute</span>`+(i.ffmpeg_log?`<br><span class="small">Last try: ${esc(i.ffmpeg_log)}</span>`:'');
@@ -162,7 +231,7 @@ async function info(){const i=await api('/api/info');$('#root').textContent=i.ro
  if(i.ffmpeg_installing)setTimeout(info,2000);
  $('#ver').textContent='dubplate '+i.version;if(!window.VER)window.VER=i.version;
  if(i.scanning)setTimeout(info,1000)}
-info();
+showMode();info();
 $('#rescan').onclick=async e=>{e.preventDefault();await api('/api/rescan',{});await info();const wait=async()=>{const i=await api('/api/info');if(i.scanning)return setTimeout(wait,1000);info();if(window.LAST)match(window.LAST)};wait()};
 const drop=$('#drop');drop.onclick=()=>$('#file').click();
 drop.ondragover=e=>{e.preventDefault();drop.classList.add('over')};drop.ondragleave=()=>drop.classList.remove('over');
@@ -192,13 +261,13 @@ function render(){
   (c.guess?`<span class="pill warn ${FILTER==='guess'?'active':''}" data-f="guess">? ${c.guess} best guess</span>`:'')+
   (c.version?`<span class="pill alt ${FILTER==='version'?'active':''}" data-f="version" title="You don't have the exact version asked for (e.g. Extended Mix). Not copied unless you tick it.">≠ ${c.version} other version only</span>`:'')+
   (c.missing?`<span class="pill bad ${FILTER==='missing'?'active':''}" data-f="missing">✕ ${c.missing} not found</span>`:'')+
-  (c.copied?`<span class="pill ok ${FILTER==='copied'?'active':''}" data-f="copied" style="opacity:.75" title="Already copied to this folder on an earlier run. Click to see them (tick one to copy it again).">✓ ${c.copied} already copied</span>`:'')+
+  (c.copied?`<span class="pill ok ${FILTER==='copied'?'active':''}" data-f="copied" style="opacity:.75" title="Already copied to ${PLACE()} on an earlier run. Click to see them (tick one to copy it again).">✓ ${c.copied} already ${usbMode()?'on the stick':'copied'}</span>`:'')+
   `<span class="small" style="align-self:center">of ${RESULTS.length} songs on your list</span>`;
- $('#dlmissing').classList.toggle('hidden',!(c.missing||c.version));
- $('#filterinfo').textContent=FILTER==='copied'?'These were already copied to this folder. Tick one to copy it again.':FILTER?'Showing only one group. Click it again to show all.':(c.missing?'Songs that weren\'t found are shown in red. Click a suggestion to use it instead.':'')+(c.copied?' Already-copied songs are hidden.':'');
+ $('#dlmissing').classList.toggle('hidden',!(c.missing||c.version));$('#dltip').classList.toggle('hidden',!(c.missing||c.version));
+ $('#filterinfo').textContent=FILTER==='copied'?`These were already copied to ${PLACE()}. Tick one to copy it again.`:FILTER?'Showing only one group. Click it again to show all.':(c.missing?'Songs that weren\'t found are shown in red. Click a suggestion to use it instead.':'')+(c.copied?' Already-copied songs are hidden.':'');
  const order={missing:0,guess:1,found:2};
  const rows=RESULTS.map((r,i)=>[r,i]).filter(([r])=>FILTER==='copied'?r.copied:(!r.copied&&(!FILTER||r.status===FILTER)));
- if(!rows.length&&!FILTER&&c.copied)$('#filterinfo').textContent='Everything found has already been copied to this folder. 🎉';
+ if(!rows.length&&!FILTER&&c.copied)$('#filterinfo').textContent=`Everything found has already been copied to ${PLACE()}. 🎉`;
  $('#tbody').innerHTML=rows.map(([r,i])=>`<tr class="${r.status}"><td><input type="checkbox" data-c="${i}" ${r.checked?'checked':''} ${r.file?'':'disabled'}></td><td class="small">${r.row??''}</td><td>${esc(r.label)}</td><td>${fileCell(r,i)}</td></tr>`).join('');
  const sel=RESULTS.filter(r=>r.checked&&r.file);const bytes=sel.reduce((a,r)=>a+(r.file.size||0),0);
  $('#go').textContent=`${usbMode()?'Make USB with':'Copy'} ${sel.length} song${sel.length===1?'':'s'}`;$('#go').disabled=!sel.length;$('#gohint').textContent=sel.length?kb(bytes):'';
@@ -225,9 +294,13 @@ $('#dlmissing').onclick=()=>{const rows=[['Row','Song','Problem','What your libr
 async function ls(p){const r=await api('/api/ls?path='+encodeURIComponent(p));const b=$('#browser');b.style.display='block';
  b.innerHTML=(r.parent!=null?`<div data-p="${esc(r.parent)}">⬆ Up one level</div>`:'')+(r.path?`<div class="small" style="cursor:default">In <b>${esc(r.path)}</b> (${r.free} free) · click a folder to open it</div><div data-use="${esc(r.path)}" style="color:var(--acc)">✓ Copy into this folder</div>`:`<div class="small" style="cursor:default">This PC: pick a drive</div>`)+(r.error?`<div class="small" style="color:var(--bad)">${esc(r.error)}</div>`:'')+r.dirs.map(d=>`<div data-p="${esc(d.path)}">📁 ${esc(d.name)}</div>`).join('')}
 $('#browse').onclick=()=>{const b=$('#browser');if(b.style.display==='block'){b.style.display='none';return}ls($('#dest').value||'~')};
-$('#browser').onclick=e=>{const d=e.target.closest('div');if(!d)return;if(d.dataset.use){$('#dest').value=d.dataset.use;$('#browser').style.display='none';remember();checkCopied()}else if(d.dataset.p!=null){if(d.dataset.p)$('#dest').value=d.dataset.p;ls(d.dataset.p)}};
+$('#browser').onclick=e=>{const d=e.target.closest('div');if(!d)return;if(d.dataset.use){$('#dest').value=DEST[MODE]=d.dataset.use;$('#browser').style.display='none';remember();checkCopied()}else if(d.dataset.p!=null){if(d.dataset.p)$('#dest').value=DEST[MODE]=d.dataset.p;ls(d.dataset.p)}};
 ['dest','folders','number','playlist'].forEach(k=>$('#'+k).addEventListener('change',remember));
-$('#go').onclick=async()=>{const dest=$('#dest').value.trim();if(!dest){$('#dest').focus();$('#gohint').textContent='Type or browse to a folder first.';return}
+// the box belongs to the tab that's open: only typing / browsing changes that tab's folder
+$('#dest').addEventListener('input',()=>{DEST[MODE]=$('#dest').value});
+$('#dest').addEventListener('change',()=>{DEST[MODE]=$('#dest').value;remember()});
+$('#go').onclick=async()=>{const dest=$('#dest').value.trim();if(!dest){$('#dest').focus();$('#gohint').textContent=usbMode()?'Pick your USB stick first.':'Type or browse to a folder first.';return}
+ const jobMode=MODE;
  const items=RESULTS.map((r,i)=>[r,i+1]).filter(([r])=>r.checked&&r.file).sort((a,b)=>a[1]-b[1]).map(([r,n])=>({src:r.file.path,rel:r.file.rel,n}));
  remember();$('#go').disabled=true;$('#done').innerHTML='';
  const res=await api('/api/copy',{dest,items,folders:$('#folders').checked,number:$('#number').checked,playlist:!usbMode()&&$('#playlist').checked,
@@ -235,14 +308,30 @@ $('#go').onclick=async()=>{const dest=$('#dest').value.trim();if(!dest){$('#dest
  if(res.error){$('#done').innerHTML=`<div class="banner bad">${esc(res.error)}</div>`;$('#go').disabled=false;return}
  $('#progress').classList.remove('hidden');
  const tick=async()=>{const j=await api('/api/job/'+res.job);$('#barfill').style.width=(100*j.n/Math.max(1,j.total))+'%';
-  $('#ptext').textContent=`${j.n} of ${j.total} songs${j.current?' · '+(usbMode()?'checking / converting ':'')+j.current:''}`;
+  $('#ptext').textContent=`${j.n} of ${j.total} songs${j.current?' · '+(jobMode==='usb'?'checking / converting ':'')+j.current:''}`;
   if(!j.finished)return setTimeout(tick,400);
   const miss=RESULTS.filter(r=>r.status==='missing'||(r.status==='version'&&!r.checked)).length;
-  const doneSet=new Set(j.done_srcs);RESULTS.forEach(r=>{if(r.file&&doneSet.has(r.file.path)){r.copied=true;r.checked=false}});FILTER=null;render();
-  let h=`<div class="banner ${j.errors.length?'bad':'ok'}"><b>Done.</b> ${j.copied+j.converted} copied to <b>${esc(j.dest)}</b>`+(j.converted?` (${j.converted} converted so the decks can play them)`:'')+(j.skipped?`, ${j.skipped} were already there (left alone)`:'')+'.'+(j.playlist?`<br>Playlist: ${esc(j.playlist)}`:'')+`<br><span class="small">Copied songs are now hidden from the list above.</span></div>`;
+  if(MODE===jobMode){const doneSet=new Set(j.done_srcs);RESULTS.forEach(r=>{if(r.file&&doneSet.has(r.file.path)){r.copied=true;r.checked=false}})}FILTER=null;render();
+  let h=`<div class="banner ${j.errors.length?'bad':'ok'}"><b>Done.</b> ${j.copied+j.converted} copied to <b>${esc(j.dest)}</b>`+(j.converted?` (${j.converted} converted so the decks can play them)`:'')+(j.skipped?`, ${j.skipped} were already there (left alone)`:'')+'.'+(j.unchecked?`<br><span class="small">${j.unchecked} WAV/AIFF file${j.unchecked>1?'s were':' was'} copied without checking (ffprobe isn't installed): older decks only play them at 44.1/48 kHz, 16/24-bit.</span>`:'')+(j.playlist?`<br>Playlist: ${esc(j.playlist)}`:'')+`<br><span class="small">Copied songs are now hidden from the list above.</span></div>`;
   if(j.errors.length)h+=`<div class="banner bad"><b>${j.errors.length} couldn't be copied:</b><br>`+j.errors.map(e=>esc(e.src)+'<br><span class="small">'+esc(e.msg)+'</span>').join('<br>')+'</div>';
   if(miss)h+=`<div class="banner bad">${miss} song${miss>1?'s were':' was'} not in your library (or only in a different version). Use the download button above to save the list.</div>`;
   $('#done').innerHTML=h;$('#go').disabled=false};tick()};
+// ---- tooltips: hover or keyboard focus shows them, a tap toggles them (phones)
+const tipbox=$('#tipbox');let TIPON=null,TIPAT=0;
+function showTip(el){const t=el.dataset.tip;if(!t)return;if(TIPON!==el)TIPAT=Date.now();if(TIPON&&TIPON!==el)TIPON.classList.remove('on');
+ tipbox.textContent=t;tipbox.classList.remove('hidden');TIPON=el;el.classList.add('on');
+ const r=el.getBoundingClientRect(),b=tipbox.getBoundingClientRect(),m=12;
+ let x=Math.min(Math.max(m,r.left+r.width/2-b.width/2),innerWidth-b.width-m);
+ let y=r.top-b.height-8;if(y<m)y=r.bottom+8;tipbox.style.left=x+'px';tipbox.style.top=y+'px'}
+function hideTip(){tipbox.classList.add('hidden');if(TIPON)TIPON.classList.remove('on');TIPON=null}
+document.addEventListener('mouseover',e=>{const t=e.target.closest('.tip');if(t)showTip(t)});
+document.addEventListener('mouseout',e=>{if(e.target.closest('.tip'))hideTip()});
+document.addEventListener('focusin',e=>{const t=e.target.closest('.tip');if(t)showTip(t)});
+document.addEventListener('focusout',e=>{if(e.target.closest('.tip'))hideTip()});
+// a tap first "hovers" the ? (which already opened it): only a second tap closes it
+document.addEventListener('click',e=>{const t=e.target.closest('.tip');if(t){e.preventDefault();e.stopPropagation();(TIPON===t&&Date.now()-TIPAT>500)?hideTip():showTip(t);return}hideTip()},true);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')hideTip()});
+addEventListener('scroll',hideTip,{passive:true});
 // ---- updates
 let UPD=null;
 async function upd(check){const u=await api('/api/update/status'+(check?'?check=1':''));UPD=u;

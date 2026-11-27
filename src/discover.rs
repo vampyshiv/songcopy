@@ -21,7 +21,11 @@ pub fn load_settings() -> Map<String, Value> {
         .unwrap_or_default()
 }
 
+/// settings are read, changed and written back as a whole: one change at a time
+static SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub fn save_setting(key: &str, value: Value) {
+    let _g = SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut s = load_settings();
     s.insert(key.to_string(), value);
     if let Ok(j) = serde_json::to_vec_pretty(&Value::Object(s)) {
@@ -43,6 +47,17 @@ pub fn unc_music(host: &str) -> String {
         "\\\\{host}\\{}",
         share.trim_matches(['\\', '/']).replace('/', "\\")
     )
+}
+
+/// the share to sign in to: \\host\<first part of the music folder setting> (default "home")
+pub fn share_root(host: &str) -> String {
+    let share = setting_str("share_music").unwrap_or_else(|| SHARE_MUSIC_DEFAULT.into());
+    let first = share
+        .trim_matches(['\\', '/'])
+        .split(['\\', '/'])
+        .next()
+        .unwrap_or("home");
+    format!("\\\\{host}\\{first}")
 }
 
 pub fn port_open(host: &str, timeout: Duration) -> bool {
@@ -177,12 +192,7 @@ pub fn windows_music_folder() -> String {
                 "\n  Sign in with your SERVER username and password (Windows will remember it):"
             );
             let _ = std::process::Command::new("net")
-                .args([
-                    "use",
-                    &format!("\\\\{addr}\\home"),
-                    "/savecred",
-                    "/persistent:yes",
-                ])
+                .args(["use", &share_root(&addr), "/savecred", "/persistent:yes"])
                 .status();
         }
         if paths::isdir(&unc_music(&addr)) {
@@ -212,5 +222,8 @@ mod tests {
         assert_eq!(setting_str("server").as_deref(), Some("myserver.local"));
         save_setting("share_music", Value::from("music/"));
         assert_eq!(unc_music("x"), "\\\\x\\music");
+        assert_eq!(share_root("x"), "\\\\x\\music");
+        save_setting("share_music", Value::from("data\\Media\\Music"));
+        assert_eq!(share_root("x"), "\\\\x\\data");
     }
 }
