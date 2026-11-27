@@ -53,33 +53,65 @@ songcopy copy  mylist.xlsx /media/usb --number --playlist --prefer mp3
 | `--playlist` | also write `playlist.m3u8` |
 | `--strict` | don't copy best guesses |
 | `--any-version` | copy the version you have when the exact one (e.g. Extended Mix) isn't there |
+| `--usb` | USB for CDJs/XDJs: numbered playlist folder, converts what decks can't play |
+| `--usb-format aiff\|mp3` | what `--usb` converts to (default `aiff`) |
+| `--name NAME` | playlist folder name for `--usb` (default: the list's file name) |
+| `--recopy` | also copy songs already copied to that destination on an earlier run |
 | `--dry-run` | show what would happen, copy nothing |
 | `--music PATH` | the library (default `~/Music`) |
 | `serve --no-browser --dest FOLDER --host 0.0.0.0 --port N` | web page options |
 
 Songs it can't find are printed in red and saved next to your list as `<list>-missing.csv`.
 
-### From a Windows PC (e.g. straight into a Traktor folder)
+### Re-running a list: only new songs
 
-The music stays on the server; the songs are copied over the network into a folder on the
-Windows PC.
+songcopy remembers what it copied to each destination. When you add the missing songs to
+your library and run the same list again, songs already copied there are hidden (web page)
+or skipped (terminal), so only the new finds get copied. A song is offered again if its
+copy is deleted, or if you pick a different destination. Use `--recopy`, or tick it on the
+page, to copy something again. The memory lives in `~/.cache/songcopy/copied.json`
+(Windows: `%LOCALAPPDATA%\songcopy\`). Nothing extra is written into the destination.
 
-1. Share your home folder from the server with Samba (as `\\<server>\home`), with this
-   project at `~/songcopy`.
-2. On Windows, open `\\<server>\home\songcopy` in File Explorer and double-click
-   **`Song Copy (Windows).bat`**. It:
-   - installs Python if it's missing (one keypress, via winget),
-   - finds the server by itself on whatever network you're on: the address that worked
-     last time, then `dahlias-den.local`, then a ~1 second scan of the network, then asks you,
-   - has you sign in to the share once (remembered),
-   - puts a **Song Copy** shortcut on the desktop,
-   - opens the page. The folder picker shows the Windows drives.
+### USB stick for CDJs / XDJs
 
-To use a different server name, edit `dahlias-den` in the `.bat`. To fill in the
-destination automatically, set `TRAKTOR=` near the top.
+Choose **USB stick for CDJs / XDJs** on the page (or `--usb` in the terminal) and pick the
+stick.
+
+- **One folder per playlist.** Songs are numbered in your list's order: `My set/001 - …`.
+  The number is the song's position in the list, so songs you add later slot into their place.
+- **Converted only where needed.** MP3, AAC and 16/24-bit WAV/AIFF at 44.1/48 kHz are
+  copied unchanged. Everything older Pioneer decks (XDJ-1000, CDJ-900/2000) can't play,
+  meaning FLAC, ALAC, Opus/Ogg/WMA and hi-res, is converted to **AIFF** (lossless, default)
+  or **MP3 320**. Tags and artwork are kept.
+- **On the deck:** browse the stick with the deck's folder view. Format the stick as
+  **FAT32**, the one format every Pioneer deck reads.
+
+Converting needs **ffmpeg**. On Windows the page has an **Install ffmpeg now** button
+(uses winget). On Linux: `sudo apt install ffmpeg`.
+
+This is a plain-folder USB, not a rekordbox database USB, so there are no rekordbox
+playlists, waveforms or beat grids on the decks.
+
+### Windows: songcopy.exe (e.g. straight into a Traktor folder)
+
+The music stays on the server; songs are copied over the network into a folder on the
+Windows PC. **Download `songcopy.exe`** from the latest
+[release](../../releases) and double-click it. No Python needed. It:
+
+- finds the server by itself on whatever network you're on: the address that worked last
+  time, then `dahlias-den.local`, then a ~1 second scan of the network, then asks you,
+- has you sign in to the share once (`net use`, remembered),
+- opens the page. The folder picker shows the Windows drives.
+
+It expects the music at `\\<server>\home\Music` (Samba share `home` = the server user's home
+folder). To use a different server name or share, change `SERVER_NAMES` / `SHARE_MUSIC` in
+`songcopy.py`. You can always point it somewhere else with `songcopy.exe --music D:\Music`.
+
+Windows may warn that the app is from an "unknown publisher" (it isn't code-signed):
+click **More info → Run anyway**.
 
 Moved the server to a new network? Make sure Samba (`hosts allow`) and the firewall allow
-the new network's addresses. The launcher finds the new address by itself.
+the new network's addresses. songcopy finds the new address by itself.
 
 ## How matching works
 
@@ -110,3 +142,17 @@ python3 -m unittest discover -s tests
 ```
 
 The tests build a small fake library in a temp folder, so they never touch real music.
+
+**Windows exe.** Every push to `main` builds `songcopy.exe` on GitHub's Windows machines
+(`.github/workflows/windows-exe.yml`) with PyInstaller. That build:
+- runs the tests on Windows,
+- smoke-tests the built `.exe` (including a path over 260 characters),
+- keeps the `.exe` as a downloadable build artifact.
+
+Pushing a version tag also publishes a release:
+
+```
+git tag v1.2.0 && git push origin v1.2.0
+```
+
+Bump `VERSION` in `songcopy.py` first.

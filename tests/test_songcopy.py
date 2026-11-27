@@ -180,5 +180,90 @@ class Copying(Base):
         self.assertEqual(os.path.basename(plan[0][1]), "What__ A Song.mp3")
 
 
+
+class Memory(Base):
+    """songs copied on an earlier run aren't offered again (the 'already copied' list)"""
+    def test_remembers_per_destination_and_only_while_the_copy_exists(self):
+        src = os.path.join(self.root, LIBRARY[4])
+        with tempfile.TemporaryDirectory() as dest, tempfile.TemporaryDirectory() as other:
+            plan = sc.plan_copies([{"src": src, "rel": LIBRARY[4], "n": 7}], os.path.join(dest, "My set"), number=True)
+            self.assertTrue(plan[0][1].endswith("007 - " + os.path.basename(src)))   # list position, not 001
+            r = sc.transfer(plan, dest)
+            self.assertEqual(r["copied"], 1)
+            self.assertIn(src, sc.Ledger.copied(dest, [src]))
+            self.assertNotIn(src, sc.Ledger.copied(other, [src]))                 # other folder: not copied there
+            os.remove(r["done"][0])
+            self.assertNotIn(src, sc.Ledger.copied(dest, [src]))                  # copy deleted: offer it again
+
+    def test_files_copied_before_the_memory_existed_count(self):
+        src = os.path.join(self.root, LIBRARY[5])
+        with tempfile.TemporaryDirectory() as dest:
+            sc.copy_one(src, os.path.join(dest, os.path.basename(src)))
+            self.assertIn(src, sc.Ledger.copied(dest, [src]))
+
+
+@unittest.skipUnless(all(sc.ffmpeg_path()), "ffmpeg not installed")
+class UsbForDecks(unittest.TestCase):
+    def test_flac_is_converted_and_mp3_is_copied_as_is(self):
+        import subprocess
+        ffmpeg = sc.ffmpeg_path()[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            flac, mp3 = os.path.join(tmp, "a.flac"), os.path.join(tmp, "b.mp3")
+            for out in (flac, mp3):
+                subprocess.run([ffmpeg, "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+                                "-metadata", "title=Test Tone", out], check=True)
+            usb = os.path.join(tmp, "usb", "set")
+            st, final, _ = sc.convert_one(flac, os.path.join(usb, "001 - a.flac"), "aiff")
+            self.assertEqual((st, os.path.splitext(final)[1]), ("converted", ".aiff"))
+            info = sc.probe(final)
+            self.assertTrue(sc.deck_playable(final, info), info)
+            st, final, _ = sc.convert_one(mp3, os.path.join(usb, "002 - b.mp3"), "aiff")
+            self.assertEqual((st, os.path.splitext(final)[1]), ("copied", ".mp3"))
+            st, final, _ = sc.convert_one(flac, os.path.join(usb, "001 - a.flac"), "aiff")   # again: never overwrites
+            self.assertTrue(final.endswith("001 - a (2).aiff"))
+
+    def test_what_decks_can_play(self):
+        self.assertFalse(sc.deck_playable("x.flac", {"codec": "flac", "rate": 44100, "bits": 16}))
+        self.assertFalse(sc.deck_playable("x.wav", {"codec": "pcm_s24le", "rate": 96000, "bits": 24}))
+        self.assertTrue(sc.deck_playable("x.m4a", {"codec": "aac", "rate": 44100, "bits": 0}))
+        self.assertFalse(sc.deck_playable("x.m4a", {"codec": "alac", "rate": 44100, "bits": 16}))
+
+
+class FindServer(unittest.TestCase):
+    """the Windows server finder, against a pretend network"""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        os.environ["LOCALAPPDATA"] = self.tmp.name
+        self.saved = (sc.port_open, sc.local_networks, sc.os.path.isdir)
+
+    def tearDown(self):
+        sc.port_open, sc.local_networks, sc.os.path.isdir = self.saved
+        self.tmp.cleanup()
+
+    def network(self, up, shares_open, mine="192.168.1.20"):
+        sc.port_open = lambda h, port=445, timeout=0.6: h in up
+        sc.local_networks = lambda: (["192.168.1"], {mine})
+        real_isdir = self.saved[2]
+        sc.os.path.isdir = lambda p: any(p == sc.unc_music(h) for h in shares_open) or (
+            not p.startswith("\\\\") and real_isdir(p))
+
+    def test_by_name(self):
+        self.network(up={"dahlias-den.local"}, shares_open={"dahlias-den.local"})
+        self.assertEqual(sc.find_server(say=lambda m: None), ("dahlias-den.local", "dahlias-den.local"))
+
+    def test_by_name_but_not_signed_in_signs_in_by_name(self):
+        self.network(up={"dahlias-den.local", "192.168.1.7"}, shares_open=set())
+        self.assertEqual(sc.find_server(say=lambda m: None), (None, "dahlias-den.local"))
+
+    def test_new_network_found_by_scanning(self):
+        self.network(up={"192.168.1.1", "192.168.1.7"}, shares_open={"192.168.1.7"})
+        self.assertEqual(sc.find_server(say=lambda m: None)[0], "192.168.1.7")
+
+    def test_remembers_last_address_first(self):
+        sc.save_settings(server="10.0.0.5")
+        self.network(up={"10.0.0.5"}, shares_open={"10.0.0.5"})
+        self.assertEqual(sc.find_server(say=lambda m: None)[0], "10.0.0.5")
+
+
 if __name__ == "__main__":
     unittest.main()

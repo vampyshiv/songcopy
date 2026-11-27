@@ -7,12 +7,10 @@
 #   songcopy copy LIST DEST           copy every song in LIST into folder DEST
 #   songcopy find LIST                just check which songs can be found (copies nothing)
 #
-# FROM A WINDOWS PC (e.g. straight into your Traktor folder):
-#   double-click "Song Copy (Windows).bat" (next to this file; on the network at
-#   \\<server>\home\songcopy\). It installs Python if needed, finds this
-#   server on whatever network you're on, signs in to the share once, puts a shortcut
-#   on the desktop and opens the page. Copies go to folders on the Windows PC.
-#   Moved house / new network?  Run `stacks set-lan-ip` here; the .bat finds the new address.
+# FROM A WINDOWS PC (e.g. straight into your Traktor folder): double-click songcopy.exe
+#   (from the GitHub releases). It finds this server on whatever network you're on, signs in
+#   to the share once and opens the page. Copies go to folders on the Windows PC.
+#   Moved house / new network?  Run `stacks set-lan-ip` here; the .exe finds the new address.
 #
 # LIST can be: .csv / .tsv / .xlsx spreadsheet, .txt (one song per line),
 #              or an .m3u / .m3u8 playlist.
@@ -28,6 +26,12 @@
 #   --strict                only copy exact matches (skip "best guess" ones)
 #   --any-version           asked for e.g. an Extended Mix you don't have? copy the version you DO have
 #                           (default: don't copy it, list it in the missing file instead)
+#   --usb                   make a USB for CDJs/XDJs: DEST/<list name>/001 - ..., and anything the decks
+#                           can't play (FLAC, Opus, ALAC, hi-res) is converted (needs ffmpeg)
+#   --usb-format aiff|mp3   what --usb converts to (default aiff = lossless)
+#   --name NAME             playlist folder name for --usb
+#   --recopy                copy again songs already copied to DEST on an earlier run
+#                           (normally skipped, so re-running a list only copies the new finds)
 #   --dry-run               show what would happen, copy nothing
 #   --music PATH            music library (default ~/Music)
 #
@@ -62,6 +66,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 AUDIO_EXT = {".flac", ".mp3", ".m4a", ".opus", ".ogg", ".wav", ".aiff", ".aif", ".wma", ".alac", ".ape", ".wv"}
+VERSION = "1.1.0"
 DEFAULT_MUSIC = os.path.expanduser("~/Music")
 SKIP_DIRS = {"Podcasts"}  # top-level folders that aren't songs
 WINDOWS = os.name == "nt"
@@ -658,8 +663,11 @@ BAD_CHARS = re.compile(r'[<>:"|?*\x00-\x1f]')
 def plan_copies(items, dest, folders=False, number=False):
     """items: [{"src":..., "rel":...}] in list order -> [(src, dst)]; never two sources to one dst"""
     plan, used, seen_src = [], set(), set()
-    width = max(3, len(str(len(items))))
-    for n, it in enumerate(items, 1):
+    # "n" = the song's position in the whole list, so numbers stay the same when a later run
+    # only copies the songs that were missing before
+    width = max(3, len(str(max([it.get("n") or 0 for it in items] + [len(items)]))))
+    for k, it in enumerate(items, 1):
+        n = it.get("n") or k
         src = it["src"]
         if src in seen_src:
             continue
@@ -705,6 +713,214 @@ def copy_one(src, dst):
         return "copied", dst, ""
     except Exception as e:  # noqa: BLE001 - report every failure, keep going
         return "error", dst, str(e)
+
+# ----------------------------------------------------------------------------- USB sticks for CDJs / XDJs
+
+# What every Pioneer/AlphaTheta deck with a USB port plays (CDJ-900/2000, XDJ-1000 MK1 and newer).
+# FLAC/ALAC only arrived with the Nexus 2 generation; Opus/Ogg/WMA never. Hi-res (>48 kHz) isn't safe.
+DECK_SAFE = {"mp3": {"mp3"}, "aac": {"m4a", "mp4", "aac"}, "pcm_s16le": {"wav"}, "pcm_s24le": {"wav"},
+             "pcm_s16be": {"aif", "aiff"}, "pcm_s24be": {"aif", "aiff"}}
+USB_FORMATS = {"aiff": ".aiff", "mp3": ".mp3"}
+
+def ffmpeg_path():
+    """(ffmpeg, ffprobe) - on PATH, or where `winget install Gyan.FFmpeg` puts them"""
+    def find(name):
+        p = shutil.which(name)
+        if p or not WINDOWS:
+            return p
+        la = os.environ.get("LOCALAPPDATA", "")
+        link = os.path.join(la, "Microsoft", "WinGet", "Links", name + ".exe")
+        if os.path.isfile(link):
+            return link
+        import glob
+        hits = glob.glob(os.path.join(la, "Microsoft", "WinGet", "Packages", "Gyan.FFmpeg*", "*", "bin", name + ".exe"))
+        return hits[0] if hits else None
+    return find("ffmpeg"), find("ffprobe")
+
+FFMPEG_INSTALL = {"running": False, "log": ""}
+
+def install_ffmpeg():
+    """Windows: install ffmpeg with winget (free, no admin needed)"""
+    import subprocess
+    FFMPEG_INSTALL.update(running=True, log="")
+    try:
+        r = subprocess.run(["winget", "install", "-e", "--id", "Gyan.FFmpeg", "--scope", "user",
+                            "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"],
+                           capture_output=True, timeout=900, **NO_WINDOW)
+        FFMPEG_INSTALL["log"] = (r.stdout + r.stderr).decode(errors="replace")[-600:]
+    except Exception as e:  # noqa: BLE001
+        FFMPEG_INSTALL["log"] = f"couldn't run winget: {e}"
+    FFMPEG_INSTALL["running"] = False
+
+def probe(src):
+    """-> {"codec", "rate", "bits"} of the first audio stream (None if ffprobe is missing / fails)"""
+    import subprocess
+    ffprobe = ffmpeg_path()[1]
+    if not ffprobe:
+        return None
+    try:
+        out = subprocess.run([ffprobe, "-v", "error", "-select_streams", "a:0", "-show_entries",
+                              "stream=codec_name,sample_rate,bits_per_raw_sample,bits_per_sample",
+                              "-of", "json", "file:" + longp(src)],
+                             capture_output=True, timeout=60, **NO_WINDOW)
+        s = json.loads(out.stdout or b"{}").get("streams", [{}])[0]
+    except Exception:  # noqa: BLE001
+        return None
+    bits = int(s.get("bits_per_raw_sample") or s.get("bits_per_sample") or 0)
+    return {"codec": s.get("codec_name", ""), "rate": int(s.get("sample_rate") or 0), "bits": bits}
+
+def deck_playable(src, info):
+    ext = os.path.splitext(src)[1].lower().lstrip(".")
+    return (info is not None and ext in DECK_SAFE.get(info["codec"], ())
+            and info["rate"] in (44100, 48000) and info["bits"] in (0, 16, 24))
+
+def convert_one(src, dst, fmt="aiff"):
+    """deck-ready copy of src at dst (extension decided here). -> (status, final_dst, message).
+    Like copy_one: never overwrites, never touches src."""
+    import subprocess
+    info = probe(src)
+    if info is not None and deck_playable(src, info):
+        return copy_one(src, dst)
+    ffmpeg = ffmpeg_path()[0]
+    if not ffmpeg:
+        return "error", dst, "this file needs converting for the decks, but ffmpeg isn't installed"
+    dst = os.path.splitext(dst)[0] + USB_FORMATS[fmt]
+    try:
+        os.makedirs(longp(os.path.dirname(dst)), exist_ok=True)
+        base, ext = os.path.splitext(dst)
+        k = 2
+        while os.path.exists(longp(dst)):
+            dst = f"{base} ({k}){ext}"
+            k += 1
+        rate = (info or {}).get("rate") or 44100
+        rate = rate if rate in (44100, 48000) else (48000 if rate % 48000 == 0 else 44100)
+        if fmt == "aiff":
+            codec = ["-c:a", "pcm_s24be" if (info or {}).get("bits", 16) > 16 else "pcm_s16be", "-write_id3v2", "1", "-f", "aiff"]
+        else:
+            codec = ["-c:a", "libmp3lame", "-b:a", "320k", "-id3v2_version", "3", "-f", "mp3"]
+        part = dst + ".part"
+        for art in (["-map", "0:v:0?", "-c:v", "copy", "-disposition:v", "attached_pic"], []):  # retry without cover art
+            cmd = [ffmpeg, "-v", "error", "-nostdin", "-y", "-i", "file:" + longp(src), "-map", "0:a:0", *art,
+                   "-ar", str(rate), "-ac", "2", "-map_metadata", "0", *codec, "file:" + longp(part)]
+            r = subprocess.run(cmd, capture_output=True, timeout=900, **NO_WINDOW)
+            if r.returncode == 0:
+                break
+        if r.returncode != 0:
+            try:
+                os.remove(longp(part))
+            except OSError:
+                pass
+            return "error", dst, "conversion failed: " + r.stderr.decode(errors="replace").strip()[-300:]
+        if os.path.exists(longp(dst)):   # appeared while converting: still never overwrite
+            os.remove(longp(part))
+            return "error", dst, "a file with that name appeared while converting"
+        os.replace(longp(part), longp(dst))
+        return "converted", dst, f"{(info or {}).get('codec', '?')} → {fmt.upper()}"
+    except Exception as e:  # noqa: BLE001
+        return "error", dst, str(e)
+
+NO_WINDOW = {"creationflags": 0x08000000} if WINDOWS else {}   # no console windows popping up per file
+
+# ----------------------------------------------------------------------------- remembering what was copied
+
+class Ledger:
+    """What songcopy copied to each destination, so a re-run of the same list (after you've added the
+    missing songs to your library) only offers what's still to do. Kept in the user's cache folder -
+    nothing extra is written into the destination. A song counts as copied only while its copy still exists."""
+    lock = threading.Lock()
+
+    @staticmethod
+    def _file():
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/.cache")
+        return os.path.join(base, "songcopy", "copied.json")
+
+    @staticmethod
+    def _key(dest):
+        return os.path.normcase(os.path.abspath(os.path.expanduser(dest)))
+
+    @classmethod
+    def _load(cls):
+        try:
+            with open(cls._file(), encoding="utf-8") as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            return {}
+
+    @classmethod
+    def record(cls, dest, pairs):
+        """pairs: [(src, final_dst)]"""
+        if not pairs:
+            return
+        with cls.lock:
+            d = cls._load()
+            m = d.setdefault(cls._key(dest), {})
+            for src, dst in pairs:
+                m[src] = dst
+            p = cls._file()
+            try:
+                os.makedirs(os.path.dirname(p), exist_ok=True)
+                with open(p + ".tmp", "w", encoding="utf-8") as fh:
+                    json.dump(d, fh)
+                os.replace(p + ".tmp", p)
+            except OSError:
+                pass
+
+    @classmethod
+    def copied(cls, dest, srcs):
+        """-> {src: dst} for the srcs already copied to dest (and still there)"""
+        if not dest or not dest.strip():
+            return {}
+        dest = os.path.abspath(os.path.expanduser(dest))
+        m = cls._load().get(cls._key(dest), {})
+        out = {}
+        for s in srcs:
+            d = m.get(s)
+            if d and os.path.exists(longp(d)):
+                out[s] = d
+                continue
+            # copied before songcopy kept a record (or by hand): same name + size right in dest
+            d = os.path.join(dest, BAD_CHARS.sub("_", os.path.basename(s)))
+            try:
+                if os.path.exists(longp(d)) and getsize(d) == getsize(s):
+                    out[s] = d
+            except OSError:
+                pass
+        return out
+
+def transfer(plan, dest_key, usb_format=None, on_progress=None):
+    """copy (or for a USB, copy/convert) every (src, dst) in plan. Returns a summary dict."""
+    res = {"copied": 0, "converted": 0, "skipped": 0, "errors": [], "done": [], "pairs": []}
+    for k, (s, d) in enumerate(plan, 1):
+        if on_progress:
+            on_progress(k, s)
+        st, final, msg = convert_one(s, d, usb_format) if usb_format else copy_one(s, d)
+        if st == "error":
+            res["errors"].append({"src": s, "msg": msg})
+            continue
+        res[st] += 1
+        res["done"].append(final)
+        res["pairs"].append((s, final))
+        if len(res["pairs"]) % 20 == 0:   # save as we go, so an interrupted copy still counts
+            Ledger.record(dest_key, res["pairs"][-20:])
+    Ledger.record(dest_key, res["pairs"][len(res["pairs"]) // 20 * 20:])
+    return res
+
+def usb_folder(dest, name):
+    name = BAD_CHARS.sub("_", (name or "").strip()).strip(". ") or "songcopy"
+    return os.path.join(dest, name[:80])
+
+def estimate_size(plan, usb_format=None):
+    """bytes needed; FLAC -> AIFF is roughly 1.7x, lossy -> AIFF a lot more"""
+    total = 0
+    for s, _ in plan:
+        size = getsize(s)
+        ext = os.path.splitext(s)[1].lower()
+        if usb_format == "aiff" and ext in (".flac", ".alac", ".ape", ".wv"):
+            size *= 1.8
+        elif usb_format == "aiff" and ext in (".opus", ".ogg", ".wma"):
+            size *= 10
+        total += size
+    return int(total)
 
 def write_playlist(dest, done):
     path = os.path.join(dest, "playlist.m3u8")
@@ -762,6 +978,8 @@ def cli_run(args, do_copy):
         sys.exit(f"{C.R}No songs found in {args.list}{C.X}")
     print(f"{C.D}Looking up {len(reqs)} songs from {os.path.basename(args.list)} ...{C.X}\n")
     results = [lib.match(r, args.prefer) for r in reqs]
+    for i, r in enumerate(results, 1):
+        r["n"] = i
 
     found = [r for r in results if r["status"] == "found"]
     guess = [r for r in results if r["status"] == "guess"]
@@ -798,7 +1016,7 @@ def cli_run(args, do_copy):
 
     to_copy = found + ([] if args.strict else guess) + (other if any_version else [])
     to_copy.sort(key=lambda r: r["row"] or 0)
-    items = [{"src": r["file"]["path"], "rel": r["file"]["rel"]} for r in to_copy]
+    items = [{"src": r["file"]["path"], "rel": r["file"]["rel"], "n": r["n"]} for r in to_copy]
 
     print(f"{C.B}Found {len(found)} exact, {len(guess)} best-guess, "
           + (f"{C.M}{len(other)} other-version-only{C.X}{C.B}, " if other else "")
@@ -814,12 +1032,29 @@ def cli_run(args, do_copy):
         return 1 if (missing or other) else 0
 
     dest = os.path.abspath(os.path.expanduser(args.dest))
-    plan = plan_copies(items, dest, args.folders, args.number)
-    total = sum(getsize(s) for s, _ in plan)
-    print(f"\n{'Would copy' if args.dry_run else 'Copying'} {len(plan)} files ({human(total)}) to {C.B}{dest}{C.X}")
+    before = {} if args.recopy else Ledger.copied(dest, [it["src"] for it in items])
+    if before:
+        items = [it for it in items if it["src"] not in before]
+        print(f"{C.G}{len(before)} already copied to {dest} on an earlier run - skipped{C.X} {C.D}(--recopy to copy them again){C.X}")
+        if not items:
+            print(f"{C.G}{C.B}Nothing new to copy.{C.X}")
+            return 1 if (missing or other) else 0
+
+    usb_format = args.usb_format if args.usb else None
+    if usb_format:
+        if not all(ffmpeg_path()):
+            print(f"{C.Y}ffmpeg isn't installed: songs the decks can't play (FLAC etc.) will fail. Install ffmpeg first.{C.X}")
+        target = usb_folder(dest, args.name or os.path.splitext(os.path.basename(args.list))[0])
+        plan = plan_copies(items, target, False, True)
+    else:
+        target = dest
+        plan = plan_copies(items, dest, args.folders, args.number)
+    total = estimate_size(plan, usb_format)
+    verb = ("Would copy" if args.dry_run else "Copying") + (f" (for decks: anything they can't play → {usb_format.upper()})" if usb_format else "")
+    print(f"\n{verb} {len(plan)} files (about {human(total)}) to {C.B}{target}{C.X}")
     free = shutil.disk_usage(nearest_existing(dest)).free
     if total > free:
-        sys.exit(f"{C.R}Not enough space: need {human(total)}, only {human(free)} free on that drive.{C.X}")
+        sys.exit(f"{C.R}Not enough space: need about {human(total)}, only {human(free)} free on that drive.{C.X}")
     if args.dry_run:
         for s, d in plan[:20]:
             print(f"  {C.D}{os.path.relpath(d, dest)}{C.X}")
@@ -828,27 +1063,22 @@ def cli_run(args, do_copy):
         print(f"{C.D}(dry run: nothing was copied){C.X}")
         return 1 if missing else 0
 
-    copied = skipped = 0
-    errors, done = [], []
-    for k, (s, d) in enumerate(plan, 1):
-        st, final, msg = copy_one(s, d)
-        if st == "copied":
-            copied += 1; done.append(final)
-        elif st == "skipped":
-            skipped += 1; done.append(final)
-        else:
-            errors.append((s, msg))
+    def progress(k, s):
         if C.on:
             print(f"\r  {k}/{len(plan)}  {os.path.basename(s)[:60]:<60}", end="", flush=True)
+    r = transfer(plan, dest, usb_format, progress)
+    errors = r["errors"]
     if C.on:
         print("\r" + " " * 80 + "\r", end="")
-    if args.playlist and done:
-        print(f"Playlist: {write_playlist(dest, done)}")
-    print(f"{C.G}{C.B}Done: {copied} copied{C.X}" + (f", {skipped} already there (skipped)" if skipped else ""))
+    if args.playlist and r["done"]:
+        print(f"Playlist: {write_playlist(target, r['done'])}")
+    print(f"{C.G}{C.B}Done: {r['copied'] + r['converted']} copied{C.X}"
+          + (f" ({r['converted']} converted for the decks)" if r["converted"] else "")
+          + (f", {r['skipped']} already there (skipped)" if r["skipped"] else ""))
     if errors:
         print(f"{C.R}{C.B}{len(errors)} could not be copied:{C.X}")
-        for s, m in errors:
-            print(f"  {C.R}{s}\n    {m}{C.X}")
+        for e in errors:
+            print(f"  {C.R}{e['src']}\n    {e['msg']}{C.X}")
     if missing:
         print(f"{C.R}{len(missing)} song{'s were' if len(missing) > 1 else ' was'} not in your library - see {missing_csv}{C.X}")
     return 1 if (missing or errors) else 0
@@ -900,7 +1130,8 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/info":
             return self.send(200, {"root": lib.root, "count": len(lib.files), "ready": lib.ready.is_set(),
                                    "scanning": lib.scanning, "progress": lib.progress,
-                                   "scanned": when(lib.scanned_at),
+                                   "scanned": when(lib.scanned_at), "ffmpeg": all(ffmpeg_path()), "windows": WINDOWS, "version": VERSION,
+                                   "ffmpeg_installing": FFMPEG_INSTALL["running"], "ffmpeg_log": FFMPEG_INSTALL["log"],
                                    "home": os.path.expanduser("~"), "dest": self.default_dest or "",
                                    "example": os.path.join(os.path.expanduser("~"), "Desktop", "My songs")})
         if u.path == "/api/ls":
@@ -1002,46 +1233,53 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, {"error": "Choose a destination folder first."})
             if dest == lib.root or dest.startswith(lib.root + os.sep):
                 pass  # allowed (copy into a subfolder of Music), still never overwrites
-            items = [{"src": it["src"], "rel": it.get("rel", "")} for it in b.get("items", [])
+            items = [{"src": it["src"], "rel": it.get("rel", ""), "n": it.get("n")} for it in b.get("items", [])
                      if isfile(it.get("src", ""))]
             if not items:
                 return self.send(200, {"error": "Nothing selected to copy."})
-            plan = plan_copies(items, dest, b.get("folders"), b.get("number"))
-            total = sum(getsize(s) for s, _ in plan)
+            usb_format = b.get("usb_format") if b.get("mode") == "usb" else None
+            if usb_format and usb_format not in USB_FORMATS:
+                return self.send(200, {"error": "Unknown USB format."})
+            if usb_format:   # USB for decks: one playlist folder, numbered in list order
+                target = usb_folder(dest, b.get("usb_name"))
+                plan = plan_copies(items, target, False, True)
+            else:
+                target = dest
+                plan = plan_copies(items, dest, b.get("folders"), b.get("number"))
+            total = estimate_size(plan, usb_format)
             free = shutil.disk_usage(nearest_existing(dest)).free
             if total > free:
-                return self.send(200, {"error": f"Not enough space: need {human(total)}, only {human(free)} free there."})
+                return self.send(200, {"error": f"Not enough space: need about {human(total)}, only {human(free)} free there."})
             jid = uuid.uuid4().hex[:10]
-            JOBS[jid] = {"total": len(plan), "bytes": total, "done_bytes": 0, "n": 0, "copied": 0, "skipped": 0,
-                         "errors": [], "current": "", "finished": False, "dest": dest, "playlist": None}
-            threading.Thread(target=run_job, args=(jid, plan, dest, b.get("playlist")), daemon=True).start()
+            JOBS[jid] = {"total": len(plan), "n": 0, "copied": 0, "converted": 0, "skipped": 0, "errors": [],
+                         "current": "", "finished": False, "dest": target, "playlist": None, "done_srcs": []}
+            threading.Thread(target=run_job, args=(jid, plan, dest, target, b.get("playlist"), usb_format),
+                             daemon=True).start()
             return self.send(200, {"job": jid, "count": len(plan), "size": human(total)})
+        if u.path == "/api/install_ffmpeg" and WINDOWS:
+            if not FFMPEG_INSTALL["running"] and not all(ffmpeg_path()):
+                threading.Thread(target=install_ffmpeg, daemon=True).start()
+            return self.send(200, {"started": True})
+        if u.path == "/api/copied":   # which of these songs are already in that destination?
+            return self.send(200, {"copied": list(Ledger.copied(b.get("dest", ""), b.get("srcs", [])))})
         self.send(404, {"error": "not found"})
 
-def run_job(jid, plan, dest, playlist):
+def run_job(jid, plan, dest, target, playlist, usb_format):
     j = JOBS[jid]
-    done = []
-    for s, d in plan:
-        j["current"] = os.path.basename(s)
-        st, final, msg = copy_one(s, d)
-        j["n"] += 1
-        try:
-            j["done_bytes"] += getsize(s)
-        except OSError:
-            pass
-        if st == "copied":
-            j["copied"] += 1; done.append(final)
-        elif st == "skipped":
-            j["skipped"] += 1; done.append(final)
-        else:
-            j["errors"].append({"src": s, "msg": msg})
-    if playlist and done:
-        try:
-            j["playlist"] = write_playlist(dest, done)
-        except OSError as e:
-            j["errors"].append({"src": "playlist.m3u8", "msg": str(e)})
-    j["current"] = ""
-    j["finished"] = True
+    def progress(k, s):
+        j["n"], j["current"] = k - 1, os.path.basename(s)
+    try:
+        r = transfer(plan, dest, usb_format, progress)
+        j.update(copied=r["copied"], converted=r["converted"], skipped=r["skipped"], errors=r["errors"],
+                 done_srcs=[s for s, _ in r["pairs"]])
+        if playlist and r["done"]:
+            try:
+                j["playlist"] = write_playlist(target, r["done"])
+            except OSError as e:
+                j["errors"].append({"src": "playlist.m3u8", "msg": str(e)})
+    except Exception as e:  # noqa: BLE001
+        j["errors"].append({"src": "", "msg": f"stopped: {e}"})
+    j["n"], j["current"], j["finished"] = len(plan), "", True
 
 def when(dt):
     if not dt:
@@ -1196,18 +1434,33 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
 
 <section class="card hidden" id="copycard">
   <div class="step"><b>3</b><h2>Copy them to</h2></div>
+  <p class="small" style="margin:-4px 0 10px">Songs already copied to this folder on an earlier run are hidden, so after adding missing songs to your library you can re-run the same list and only copy the new ones.</p>
   <div class="row"><input type="text" id="dest" placeholder="/home/you/Desktop/Party mix" spellcheck="false">
   <button id="browse">Browse…</button></div>
   <div class="browser" id="browser"></div>
-  <div class="opts">
+  <div class="opts" style="color:var(--ink)">
+    <label><input type="radio" name="mode" value="files" id="mode_files" checked> Copy the files as they are</label>
+    <label><input type="radio" name="mode" value="usb" id="mode_usb"> USB stick for CDJs / XDJs</label>
+  </div>
+  <div class="opts" id="filesopts">
     <label><input type="checkbox" id="folders"> Keep Artist / Album folders</label>
     <label><input type="checkbox" id="number"> Number files in list order (001, 002…)</label>
     <label><input type="checkbox" id="playlist"> Also make a playlist file</label>
+  </div>
+  <div id="usbopts" class="hidden">
+    <div class="opts"><label>Playlist folder on the stick <input type="text" id="usb_name" style="min-width:12em" spellcheck="false"></label>
+      <label>Songs the decks can't play (FLAC, Opus…) become
+      <select id="usb_format"><option value="aiff">AIFF (lossless)</option><option value="mp3">MP3 320 kbps (smaller)</option></select></label></div>
+    <p class="small" style="margin:8px 0 0">Pick the USB stick (or a folder on it) above. Songs go into one folder, numbered in your list's order,
+    and anything an older deck (XDJ-1000, CDJ-900/2000) can't play is converted; tags and artwork are kept. On the deck, browse the stick with its
+    <b>folder</b> view. Use a stick formatted as <b>FAT32</b>, the one format every Pioneer deck reads.
+    <span id="noffmpeg" class="hidden" style="color:var(--bad)"><br>ffmpeg isn't installed on this computer, so songs that need converting will fail. <span id="ffmpeghelp">Install ffmpeg, then restart Song Copy.</span></span></p>
   </div>
   <div class="row" style="margin-top:14px"><button class="primary" id="go">Copy songs</button><span class="small" id="gohint"></span></div>
   <div id="progress" class="hidden"><div class="bar"><i id="barfill"></i></div><div class="small" id="ptext"></div></div>
   <div id="done"></div>
 </section>
+<p class="small" id="ver" style="text-align:center;margin-top:24px"></p>
 </main>
 <audio id="audio"></audio>
 <script>
@@ -1216,12 +1469,30 @@ let RESULTS=[], FILTER=null, LISTNAME='list';
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const kb=n=>n>1e9?(n/1073741824).toFixed(1)+' GB':(n/1048576).toFixed(1)+' MB';
 async function api(p,body){const r=await fetch(p,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});return r.json()}
-try{for(const k of ['dest','prefer','folders','number','playlist']){const v=localStorage.getItem('sc_'+k);if(v==null)continue;const el=$('#'+k);el.type==='checkbox'?el.checked=v==='1':el.value=v}}catch(e){}
-function remember(){try{for(const k of ['dest','prefer','folders','number','playlist']){const el=$('#'+k);localStorage.setItem('sc_'+k,el.type==='checkbox'?(el.checked?'1':'0'):el.value)}}catch(e){}}
+const KEEP=['dest','prefer','folders','number','playlist','usb_format','mode_usb'];
+try{for(const k of KEEP){const v=localStorage.getItem('sc_'+k);if(v==null)continue;const el=$('#'+k);(el.type==='checkbox'||el.type==='radio')?el.checked=v==='1':el.value=v}}catch(e){}
+if($('#mode_usb').checked)$('#mode_files').checked=false;
+function remember(){try{for(const k of KEEP){const el=$('#'+k);localStorage.setItem('sc_'+k,(el.type==='checkbox'||el.type==='radio')?(el.checked?'1':'0'):el.value)}}catch(e){}}
+const usbMode=()=>$('#mode_usb').checked;
+function showMode(){$('#filesopts').classList.toggle('hidden',usbMode());$('#usbopts').classList.toggle('hidden',!usbMode());if(RESULTS.length)render()}
+document.querySelectorAll('input[name=mode]').forEach(r=>r.addEventListener('change',()=>{remember();showMode()}));
+$('#usb_format').addEventListener('change',remember);
+// songs already copied to the chosen folder (earlier runs) are hidden
+let CHECKT=null;
+async function checkCopied(){const dest=$('#dest').value.trim();const srcs=RESULTS.filter(r=>r.file).map(r=>r.file.path);
+ if(!srcs.length)return;const res=dest?await api('/api/copied',{dest,srcs}):{copied:[]};const got=new Set(res.copied);
+ RESULTS.forEach(r=>{const was=r.copied;r.copied=!!(r.file&&got.has(r.file.path));if(r.copied)r.checked=false;else if(was)r.checked=r.status==='found'||r.status==='guess'});render()}
+$('#dest').addEventListener('input',()=>{clearTimeout(CHECKT);CHECKT=setTimeout(checkCopied,500)});
 async function info(){const i=await api('/api/info');$('#root').textContent=i.root;
  if(!i.ready){$('#libinfo').textContent=`(reading your library for the first time… ${i.progress.toLocaleString()} songs so far)`;$('#rescan').classList.add('hidden')}
  else{$('#libinfo').textContent=`(${i.count.toLocaleString()} songs, checked ${i.scanned}${i.scanning?' · looking for new songs…':''})`;$('#rescan').classList.toggle('hidden',i.scanning)}
  if(!$('#dest').value&&i.dest){$('#dest').value=i.dest}$('#dest').placeholder=i.example;
+ $('#noffmpeg').classList.toggle('hidden',!!i.ffmpeg);
+ if(!i.ffmpeg&&i.windows)$('#ffmpeghelp').innerHTML=i.ffmpeg_installing?'Installing ffmpeg… (about a minute)':
+   `<button id="getffmpeg">Install ffmpeg now</button> <span class="small">free, about a minute</span>`+(i.ffmpeg_log?`<br><span class="small">Last try: ${esc(i.ffmpeg_log)}</span>`:'');
+ const gf=$('#getffmpeg');if(gf)gf.onclick=async()=>{await api('/api/install_ffmpeg',{});info()};
+ if(i.ffmpeg_installing)setTimeout(info,2000);
+ $('#ver').textContent='songcopy '+i.version;
  if(i.scanning)setTimeout(info,1000)}
 info();
 $('#rescan').onclick=async e=>{e.preventDefault();await api('/api/rescan',{});await info();const wait=async()=>{const i=await api('/api/info');if(i.scanning)return setTimeout(wait,1000);info();if(window.LAST)match(window.LAST)};wait()};
@@ -1229,15 +1500,15 @@ const drop=$('#drop');drop.onclick=()=>$('#file').click();
 drop.ondragover=e=>{e.preventDefault();drop.classList.add('over')};drop.ondragleave=()=>drop.classList.remove('over');
 drop.ondrop=e=>{e.preventDefault();drop.classList.remove('over');if(e.dataTransfer.files[0])loadFile(e.dataTransfer.files[0])};
 $('#file').onchange=e=>{if(e.target.files[0])loadFile(e.target.files[0]);e.target.value=''};
-$('#pastego').onclick=()=>{LISTNAME='pasted list';match({filename:'pasted.txt',text:$('#paste').value})};
+$('#pastego').onclick=()=>{LISTNAME='pasted list';if(!$('#usb_name').value)$('#usb_name').value='My set';match({filename:'pasted.txt',text:$('#paste').value})};
 $('#prefer').onchange=()=>{remember();if(window.LAST)match(window.LAST)};
-function loadFile(f){LISTNAME=f.name.replace(/\.[^.]+$/,'');const r=new FileReader();r.onload=()=>{const b=new Uint8Array(r.result);let s='';for(let i=0;i<b.length;i+=32768)s+=String.fromCharCode.apply(null,b.subarray(i,i+32768));match({filename:f.name,data:btoa(s)})};r.readAsArrayBuffer(f)}
+function loadFile(f){LISTNAME=f.name.replace(/\.[^.]+$/,'');$('#usb_name').value=LISTNAME;const r=new FileReader();r.onload=()=>{const b=new Uint8Array(r.result);let s='';for(let i=0;i<b.length;i+=32768)s+=String.fromCharCode.apply(null,b.subarray(i,i+32768));match({filename:f.name,data:btoa(s)})};r.readAsArrayBuffer(f)}
 async function match(req){window.LAST=req;$('#loaderr').textContent='';drop.innerHTML='<strong>Looking for your songs…</strong>'+($('#libinfo').textContent.includes('first time')?'<br><span class="small">(waiting for the library to finish reading - only slow the very first time)</span>':'');
  const res=await api('/api/match',{...req,prefer:$('#prefer').value});
  drop.innerHTML=`<strong>${esc(LISTNAME)}</strong> loaded. Drop another file to replace it.`;
  if(res.error){$('#loaderr').textContent=res.error;return}
  RESULTS=res.results.map(r=>({...r,checked:r.status==='found'||r.status==='guess'}));FILTER=RESULTS.some(r=>r.status==='missing')?null:null;render();
- $('#results').classList.remove('hidden');$('#copycard').classList.remove('hidden');$('#done').innerHTML='';$('#progress').classList.add('hidden')}
+ $('#results').classList.remove('hidden');$('#copycard').classList.remove('hidden');$('#done').innerHTML='';$('#progress').classList.add('hidden');showMode();checkCopied()}
 function fileCell(r,i){
  if(!r.file){let h=`<span class="tag missing">NOT FOUND</span>`;
   if(r.suggestions.length){h+=`<div class="sugg"><span class="small">Did you mean:</span>`+r.suggestions.map((s,k)=>`<a data-i="${i}" data-s="${k}">${esc(s.rel)}</a>`).join('')+`</div>`}
@@ -1248,22 +1519,24 @@ function fileCell(r,i){
  if(r.alternatives.length){h+=`<div class="sugg"><select data-alt="${i}"><option value="">${r.alternatives.length} other version${r.alternatives.length>1?'s':''} in your library…</option>`+r.alternatives.map((a,k)=>`<option value="${k}">${esc(a.rel)}</option>`).join('')+`</select></div>`}
  return h}
 function render(){
- const c={found:0,guess:0,version:0,missing:0};RESULTS.forEach(r=>c[r.status]++);
- $('#summary').innerHTML=`<span class="pill ok ${FILTER==='found'?'active':''}" data-f="found">✓ ${c.found} found</span>`+
+ const c={found:0,guess:0,version:0,missing:0,copied:0};RESULTS.forEach(r=>r.copied?c.copied++:c[r.status]++);
+ $('#summary').innerHTML=(c.found||!c.copied?`<span class="pill ok ${FILTER==='found'?'active':''}" data-f="found">✓ ${c.found} ${c.copied?'new ':''}found</span>`:'')+
   (c.guess?`<span class="pill warn ${FILTER==='guess'?'active':''}" data-f="guess">? ${c.guess} best guess</span>`:'')+
   (c.version?`<span class="pill alt ${FILTER==='version'?'active':''}" data-f="version" title="You don't have the exact version asked for (e.g. Extended Mix). Not copied unless you tick it.">≠ ${c.version} other version only</span>`:'')+
   (c.missing?`<span class="pill bad ${FILTER==='missing'?'active':''}" data-f="missing">✕ ${c.missing} not found</span>`:'')+
+  (c.copied?`<span class="pill ok ${FILTER==='copied'?'active':''}" data-f="copied" style="opacity:.75" title="Already copied to this folder on an earlier run. Click to see them (tick one to copy it again).">✓ ${c.copied} already copied</span>`:'')+
   `<span class="small" style="align-self:center">of ${RESULTS.length} songs on your list</span>`;
  $('#dlmissing').classList.toggle('hidden',!(c.missing||c.version));
- $('#filterinfo').textContent=FILTER?'Showing only one group. Click it again to show all.':(c.missing?'Songs that weren\'t found are shown in red. Click a suggestion to use it instead.':'');
+ $('#filterinfo').textContent=FILTER==='copied'?'These were already copied to this folder. Tick one to copy it again.':FILTER?'Showing only one group. Click it again to show all.':(c.missing?'Songs that weren\'t found are shown in red. Click a suggestion to use it instead.':'')+(c.copied?' Already-copied songs are hidden.':'');
  const order={missing:0,guess:1,found:2};
- const rows=RESULTS.map((r,i)=>[r,i]).filter(([r])=>!FILTER||r.status===FILTER);
+ const rows=RESULTS.map((r,i)=>[r,i]).filter(([r])=>FILTER==='copied'?r.copied:(!r.copied&&(!FILTER||r.status===FILTER)));
+ if(!rows.length&&!FILTER&&c.copied)$('#filterinfo').textContent='Everything found has already been copied to this folder. 🎉';
  $('#tbody').innerHTML=rows.map(([r,i])=>`<tr class="${r.status}"><td><input type="checkbox" data-c="${i}" ${r.checked?'checked':''} ${r.file?'':'disabled'}></td><td class="small">${r.row??''}</td><td>${esc(r.label)}</td><td>${fileCell(r,i)}</td></tr>`).join('');
  const sel=RESULTS.filter(r=>r.checked&&r.file);const bytes=sel.reduce((a,r)=>a+(r.file.size||0),0);
- $('#go').textContent=`Copy ${sel.length} song${sel.length===1?'':'s'}`;$('#go').disabled=!sel.length;$('#gohint').textContent=sel.length?kb(bytes):'';
+ $('#go').textContent=`${usbMode()?'Make USB with':'Copy'} ${sel.length} song${sel.length===1?'':'s'}`;$('#go').disabled=!sel.length;$('#gohint').textContent=sel.length?kb(bytes):'';
 }
 $('#summary').onclick=e=>{const f=e.target.closest('[data-f]');if(!f)return;FILTER=FILTER===f.dataset.f?null:f.dataset.f;render()};
-$('#all').onchange=e=>{RESULTS.forEach(r=>{if(r.file&&(!FILTER||r.status===FILTER))r.checked=e.target.checked});render()};
+$('#all').onchange=e=>{RESULTS.forEach(r=>{if(r.file&&(FILTER==='copied'?r.copied:(!r.copied&&(!FILTER||r.status===FILTER))))r.checked=e.target.checked});render()};
 $('#tbody').onchange=e=>{const t=e.target;
  if(t.dataset.c!=null){RESULTS[t.dataset.c].checked=t.checked;render()}
  if(t.dataset.alt!=null&&t.value!==''){const r=RESULTS[t.dataset.alt];const a=r.alternatives.splice(+t.value,1)[0];r.alternatives.unshift(r.file);r.file=a;r.status='found';r.note='';r.checked=true;render()}};
@@ -1284,29 +1557,155 @@ $('#dlmissing').onclick=()=>{const rows=[['Row','Song','Problem','What your libr
 async function ls(p){const r=await api('/api/ls?path='+encodeURIComponent(p));const b=$('#browser');b.style.display='block';
  b.innerHTML=(r.parent!=null?`<div data-p="${esc(r.parent)}">⬆ Up one level</div>`:'')+(r.path?`<div class="small" style="cursor:default">In <b>${esc(r.path)}</b> (${r.free} free) · click a folder to open it</div><div data-use="${esc(r.path)}" style="color:var(--acc)">✓ Copy into this folder</div>`:`<div class="small" style="cursor:default">This PC: pick a drive</div>`)+(r.error?`<div class="small" style="color:var(--bad)">${esc(r.error)}</div>`:'')+r.dirs.map(d=>`<div data-p="${esc(d.path)}">📁 ${esc(d.name)}</div>`).join('')}
 $('#browse').onclick=()=>{const b=$('#browser');if(b.style.display==='block'){b.style.display='none';return}ls($('#dest').value||'~')};
-$('#browser').onclick=e=>{const d=e.target.closest('div');if(!d)return;if(d.dataset.use){$('#dest').value=d.dataset.use;$('#browser').style.display='none';remember()}else if(d.dataset.p!=null){if(d.dataset.p)$('#dest').value=d.dataset.p;ls(d.dataset.p)}};
+$('#browser').onclick=e=>{const d=e.target.closest('div');if(!d)return;if(d.dataset.use){$('#dest').value=d.dataset.use;$('#browser').style.display='none';remember();checkCopied()}else if(d.dataset.p!=null){if(d.dataset.p)$('#dest').value=d.dataset.p;ls(d.dataset.p)}};
 ['dest','folders','number','playlist'].forEach(k=>$('#'+k).addEventListener('change',remember));
 $('#go').onclick=async()=>{const dest=$('#dest').value.trim();if(!dest){$('#dest').focus();$('#gohint').textContent='Type or browse to a folder first.';return}
- const items=RESULTS.filter(r=>r.checked&&r.file).sort((a,b)=>(a.row??0)-(b.row??0)).map(r=>({src:r.file.path,rel:r.file.rel}));
+ const items=RESULTS.map((r,i)=>[r,i+1]).filter(([r])=>r.checked&&r.file).sort((a,b)=>a[1]-b[1]).map(([r,n])=>({src:r.file.path,rel:r.file.rel,n}));
  remember();$('#go').disabled=true;$('#done').innerHTML='';
- const res=await api('/api/copy',{dest,items,folders:$('#folders').checked,number:$('#number').checked,playlist:$('#playlist').checked});
+ const res=await api('/api/copy',{dest,items,folders:$('#folders').checked,number:$('#number').checked,playlist:!usbMode()&&$('#playlist').checked,
+  mode:usbMode()?'usb':'files',usb_format:$('#usb_format').value,usb_name:$('#usb_name').value});
  if(res.error){$('#done').innerHTML=`<div class="banner bad">${esc(res.error)}</div>`;$('#go').disabled=false;return}
  $('#progress').classList.remove('hidden');
- const tick=async()=>{const j=await api('/api/job/'+res.job);$('#barfill').style.width=(j.bytes?100*j.done_bytes/j.bytes:100*j.n/j.total)+'%';
-  $('#ptext').textContent=`${j.n} of ${j.total} · ${kb(j.done_bytes)} of ${kb(j.bytes)}${j.current?' · '+j.current:''}`;
+ const tick=async()=>{const j=await api('/api/job/'+res.job);$('#barfill').style.width=(100*j.n/Math.max(1,j.total))+'%';
+  $('#ptext').textContent=`${j.n} of ${j.total} songs${j.current?' · '+(usbMode()?'checking / converting ':'')+j.current:''}`;
   if(!j.finished)return setTimeout(tick,400);
   const miss=RESULTS.filter(r=>r.status==='missing'||(r.status==='version'&&!r.checked)).length;
-  let h=`<div class="banner ${j.errors.length?'bad':'ok'}"><b>Done.</b> ${j.copied} copied to <b>${esc(j.dest)}</b>`+(j.skipped?`, ${j.skipped} were already there (left alone)`:'')+'.'+(j.playlist?`<br>Playlist: ${esc(j.playlist)}`:'')+`</div>`;
+  const doneSet=new Set(j.done_srcs);RESULTS.forEach(r=>{if(r.file&&doneSet.has(r.file.path)){r.copied=true;r.checked=false}});FILTER=null;render();
+  let h=`<div class="banner ${j.errors.length?'bad':'ok'}"><b>Done.</b> ${j.copied+j.converted} copied to <b>${esc(j.dest)}</b>`+(j.converted?` (${j.converted} converted so the decks can play them)`:'')+(j.skipped?`, ${j.skipped} were already there (left alone)`:'')+'.'+(j.playlist?`<br>Playlist: ${esc(j.playlist)}`:'')+`<br><span class="small">Copied songs are now hidden from the list above.</span></div>`;
   if(j.errors.length)h+=`<div class="banner bad"><b>${j.errors.length} couldn't be copied:</b><br>`+j.errors.map(e=>esc(e.src)+'<br><span class="small">'+esc(e.msg)+'</span>').join('<br>')+'</div>';
   if(miss)h+=`<div class="banner bad">${miss} song${miss>1?'s were':' was'} not in your library (or only in a different version). Use the download button above to save the list.</div>`;
   $('#done').innerHTML=h;$('#go').disabled=false};tick()};
 </script></body></html>"""
 
+# ----------------------------------------------------------------------------- Windows: find the music server
+
+# On Windows songcopy reads the music from the server's Samba share, \\<server>\home\Music.
+# It finds the server by itself on any network: last address that worked -> these names ->
+# a quick scan of this network -> asks you (and signs in to the share once).
+SERVER_NAMES = ["dahlias-den.local", "dahlias-den"]
+SHARE_MUSIC = "home\\Music"
+
+def settings_file():
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/.cache")
+    return os.path.join(base, "songcopy", "settings.json")
+
+def load_settings():
+    try:
+        with open(settings_file(), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+def save_settings(**kw):
+    d = load_settings()
+    d.update(kw)
+    try:
+        os.makedirs(os.path.dirname(settings_file()), exist_ok=True)
+        with open(settings_file(), "w", encoding="utf-8") as fh:
+            json.dump(d, fh, indent=1)
+    except OSError:
+        pass
+
+def unc_music(host):
+    return "\\\\" + host + "\\" + SHARE_MUSIC
+
+def port_open(host, port=445, timeout=0.6):
+    import socket
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+def local_networks():
+    """the /24 networks this computer is on (e.g. ['192.168.1']) and its own addresses"""
+    import socket
+    ips = set()
+    try:   # the address used to reach other networks (no packet is actually sent)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.254.254.254", 1))
+            ips.add(s.getsockname()[0])
+    except OSError:
+        pass
+    try:
+        ips |= {a[4][0] for a in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)}
+    except OSError:
+        pass
+    nets = []
+    for ip in sorted(ips):
+        if ip.startswith(("127.", "169.254.")):
+            continue
+        n = ip.rsplit(".", 1)[0]
+        if n not in nets:
+            nets.append(n)
+    return nets, ips
+
+def find_server(say=print):
+    """-> (host whose music share opens, or None;  best guess to sign in to)"""
+    from concurrent.futures import ThreadPoolExecutor
+    memo = load_settings().get("server")
+    names = [h for h in dict.fromkeys([memo] + SERVER_NAMES) if h]
+    with ThreadPoolExecutor(8) as ex:
+        reachable = [h for h, ok in zip(names, ex.map(port_open, names)) if ok]
+    for h in reachable:
+        if os.path.isdir(unc_music(h)):
+            return h, h
+    # reachable by NAME but not signed in yet: sign in by name, so it keeps working if the IP changes
+    named = [h for h in reachable if not h[0].isdigit()]
+    if named:
+        return None, named[0]
+    say("  Not at the usual address - scanning this network for the music server ...")
+    nets, mine = local_networks()
+    targets = [f"{n}.{i}" for n in nets for i in range(1, 255) if f"{n}.{i}" not in mine]
+    with ThreadPoolExecutor(128) as ex:
+        open_ = [h for h, ok in zip(targets, ex.map(lambda h: port_open(h, timeout=0.4), targets)) if ok]
+    for h in open_:
+        if os.path.isdir(unc_music(h)):
+            return h, h
+    return None, (reachable or open_ or [""])[0]
+
+def windows_music_folder():
+    """find (and if needed sign in to) the music on the server; returns \\\\host\\home\\Music"""
+    import subprocess
+    print(f"{C.D}Looking for your music server ...{C.X}")
+    while True:
+        host, guess = find_server()
+        if host:
+            save_settings(server=host)
+            return unc_music(host)
+        print(f"\n  {C.Y}Couldn't open the music on the server automatically.{C.X}")
+        print("  That's normal the first time on a new network: Windows needs you to sign in once.")
+        print("  Don't know the server's address? On the server, run:  stacks set-lan-ip")
+        print("  (it shows the address, and whether file sharing allows this network).\n")
+        try:
+            addr = input(f"  Server address{f' [Enter = {guess}]' if guess else ' (e.g. 192.168.1.50)'}: ").strip() or guess
+        except EOFError:
+            sys.exit("No server address given.")
+        if not addr:
+            continue
+        addr = addr.strip("\\/ ")
+        if not os.path.isdir(unc_music(addr)):
+            print("\n  Sign in with your SERVER username and password (Windows will remember it):")
+            subprocess.run(["net", "use", f"\\\\{addr}\\home", "/savecred", "/persistent:yes"])
+        if os.path.isdir(unc_music(addr)):
+            save_settings(server=addr)
+            return unc_music(addr)
+        print(f"\n  {C.R}Still can't open {unc_music(addr)}.{C.X} Check the address and that the server is on.")
+
+def resolve_music(arg):
+    if arg:
+        return arg
+    if WINDOWS:
+        return windows_music_folder()
+    return DEFAULT_MUSIC
+
 # ----------------------------------------------------------------------------- main
 
 def main():
     ap = argparse.ArgumentParser(prog="songcopy", description="Copy a list of songs out of your music library (never moves or deletes).")
-    ap.add_argument("--music", default=DEFAULT_MUSIC, help="music library folder (default ~/Music)")
+    ap.add_argument("--music", default=None,
+                    help="music library folder (default: ~/Music; on Windows: the music server's share, found automatically)")
+    ap.add_argument("--version", action="version", version=f"songcopy {VERSION}")
     sub = ap.add_subparsers(dest="cmd")
     s = sub.add_parser("serve", help="open the web page")
     s.add_argument("--port", type=int, default=8765)
@@ -1322,6 +1721,14 @@ def main():
             p.add_argument("--number", action="store_true", help='prefix list order: "001 - "')
             p.add_argument("--playlist", action="store_true", help="also write playlist.m3u8")
             p.add_argument("--dry-run", "-n", action="store_true", help="show what would happen, copy nothing")
+            p.add_argument("--usb", action="store_true",
+                           help="make a USB for CDJs/XDJs: one numbered playlist folder; files decks can't play "
+                                "(FLAC, Opus, ALAC, hi-res) are converted (needs ffmpeg)")
+            p.add_argument("--usb-format", choices=["aiff", "mp3"], default="aiff",
+                           help="what --usb converts to: aiff (lossless, default) or mp3 (320k, smaller)")
+            p.add_argument("--name", help="playlist folder name for --usb (default: the list's file name)")
+            p.add_argument("--recopy", action="store_true",
+                           help="also copy songs that were already copied to DEST on an earlier run")
             p.add_argument("--any-version", action="store_true",
                            help="if the exact version (e.g. Extended Mix) isn't there, copy the version you have")
         p.add_argument("--prefer", choices=["flac", "mp3", "any"], default="flac")
@@ -1332,14 +1739,38 @@ def main():
         i = argv.index("--music")
         argv = argv[i:i + 2] + argv[:i] + argv[i + 2:]
     # plain `songcopy` (maybe with serve options) = open the web page
-    if not ({"serve", "copy", "find", "-h", "--help"} & set(argv)):
+    if not ({"serve", "copy", "find", "-h", "--help", "--version"} & set(argv)):
         argv.insert(2 if argv[:1] == ["--music"] else 0, "serve")
     args = ap.parse_args(argv)
+    if args.cmd == "serve" and WINDOWS and not args.music and already_running(args.port):
+        url = f"http://localhost:{args.port}"   # second double-click: just show the page again
+        print(f"Song Copy is already running - opening {url}")
+        open_browser(url)
+        return
+    args.music = resolve_music(args.music)
     if args.cmd == "serve":
         return serve(args)
     if not os.path.isdir(args.music):
         sys.exit(f"Music folder not found: {args.music}")
     sys.exit(cli_run(args, args.cmd == "copy"))
 
+def run():
+    """when the .exe is double-clicked, keep the window open on errors so they can be read"""
+    if not (WINDOWS and getattr(sys, "frozen", False) and sys.stdin and sys.stdin.isatty()):
+        return main()
+    try:
+        main()
+    except SystemExit as e:
+        if e.code not in (0, None):
+            if not isinstance(e.code, int):
+                print(e.code)
+            input("\nPress Enter to close this window.")
+        raise
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        input("\nSomething went wrong (details above). Press Enter to close this window.")
+        raise
+
 if __name__ == "__main__":
-    main()
+    run()
