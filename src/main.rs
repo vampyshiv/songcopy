@@ -169,6 +169,7 @@ fn resolve_music(arg: Option<String>) -> String {
 }
 
 fn main() {
+    update::remember_exe();
     if WINDOWS && std::io::stdout().is_terminal() {
         // turn on colours in the old Windows console
         let _ = std::process::Command::new("cmd").args(["/C", ""]).status();

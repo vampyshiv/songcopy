@@ -2,6 +2,12 @@
 
 Each version's notes are shown in songcopy's update card before you install it.
 
+## 2.0.1
+
+- Fix: after **Update now** or **Go back**, songcopy on Linux could fail to restart by
+  itself ("No such file or directory"). The update itself was installed; starting songcopy
+  again by hand was needed. Windows had the same risk.
+
 ## 2.0.0
 
 songcopy is now a native program, rewritten in Rust. One small download for Windows

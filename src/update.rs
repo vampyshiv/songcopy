@@ -15,6 +15,23 @@ pub const REPO: &str = "vampyshiv/songcopy";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const CHECK_EVERY: u64 = 6 * 3600;
 
+/// where this program was started from, remembered at startup: once the file has been
+/// replaced, Linux reports the running program as "songcopy (deleted)"
+static EXE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+pub fn remember_exe() {
+    if let Ok(p) = std::env::current_exe() {
+        let _ = EXE.set(p);
+    }
+}
+
+fn exe_path() -> std::io::Result<std::path::PathBuf> {
+    match EXE.get() {
+        Some(p) => Ok(p.clone()),
+        None => std::env::current_exe(),
+    }
+}
+
 pub fn asset_name() -> Option<&'static str> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("windows", "x86_64") => Some("songcopy-windows-x86_64.exe"),
@@ -171,7 +188,7 @@ pub fn previous() -> Option<(String, String)> {
 }
 
 fn can_replace_self() -> Result<(), String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = exe_path().map_err(|e| e.to_string())?;
     let dir = exe
         .parent()
         .ok_or("can't find where songcopy is installed")?;
@@ -282,7 +299,7 @@ pub fn apply() -> Result<String, String> {
 
 /// keep the running version for "Go back", then swap the new one in
 fn install(new_exe: &[u8], version: &str) -> Result<(), String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = exe_path().map_err(|e| e.to_string())?;
     let bdir = backup_dir();
     let _ = std::fs::remove_dir_all(&bdir);
     std::fs::create_dir_all(&bdir).map_err(|e| e.to_string())?;
@@ -310,7 +327,7 @@ pub fn rollback() -> Result<String, String> {
     let (v, path) = previous().ok_or("there's no earlier version to go back to")?;
     can_replace_self()?;
     let data = std::fs::read(&path).map_err(|e| e.to_string())?;
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = exe_path().map_err(|e| e.to_string())?;
     let suffix = if cfg!(windows) { ".exe" } else { "" };
     let keep = join(&backup_dir(), &format!("songcopy-{VERSION}{suffix}"));
     let _ = std::fs::copy(&exe, &keep);
@@ -330,7 +347,7 @@ pub fn rollback() -> Result<String, String> {
 
 /// start the (new) program again in place of this one, keeping the window
 pub fn restart() -> ! {
-    let exe = std::env::current_exe().expect("current exe");
+    let exe = exe_path().expect("current exe");
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     if !args.iter().any(|a| a == "--no-browser") {
         args.push("--no-browser".into());
