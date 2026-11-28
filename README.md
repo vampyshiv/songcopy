@@ -213,8 +213,8 @@ The decks then read the stick as if rekordbox had made it:
   WavPack…) are read through ffmpeg, so they need it installed (dubplate keeps a FLAC copy of
   each in its folder, under `decoded`). Your library's
   files are never changed. Pick "Leave them as they are" for decks that play FLAC
-  (CDJ-2000NXS2, CDJ-3000 and newer); Ogg files, files above 96 kHz or 24-bit, and WAV/AIFF/FLAC
-  below 44.1 kHz still won't play there, and dubplate warns about those in the set.
+  (CDJ-2000NXS2, CDJ-3000 and newer); Ogg Vorbis files, files above 96 kHz or 24-bit, and
+  lossless files below 44.1 kHz still won't play there, and dubplate warns about those in the set.
 - **The stick must be a stick.** dubplate refuses a folder that is, or holds, one of your
   library folders, since a rekordbox stick manages its own files.
 - Use a **FAT32** stick (exFAT works on newer decks).
