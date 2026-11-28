@@ -211,7 +211,8 @@ The decks then read the stick as if rekordbox had made it:
   44.1/48 kHz, are copied as they are; everything else (FLAC, ALAC, AAC, Ogg, hi-res) becomes
   AIFF (default), MP3 320 or WAV. Formats dubplate can't decode itself (Opus, WMA, APE,
   WavPack…) are read through ffmpeg, so they need it installed (dubplate keeps a FLAC copy of
-  each in its folder, under `decoded`). Your library's
+  each in its folder, under `decoded`; deleting that folder is always safe, copies are made
+  again when needed). Your library's
   files are never changed. Pick "Leave them as they are" for decks that play FLAC
   (CDJ-2000NXS2, CDJ-3000 and newer); Ogg Vorbis files, files above 96 kHz or 24-bit,
   lossless files below 44.1 kHz and anything below 16 kHz still won't play there, and dubplate warns about those in the set.

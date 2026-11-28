@@ -68,7 +68,7 @@
 <li><strong>What it copied where</strong>, so the same list isn't copied twice to the same place.</li>
 <li><strong>Your settings</strong>, and a saved list of your library's songs so the page opens instantly.</li>
 <li><strong>Song analysis</strong> for rekordbox sticks, so each song is analysed once.</li>
-<li><strong>Decoded copies</strong> of Opus, WMA and other songs dubplate can't read by itself you've put on rekordbox sticks (as FLAC, so they can be analysed and converted). These take space, several times the size of the Opus file; deleting the <code>decoded</code> folder inside dubplate's folder is safe, they're made again when needed.</li>
+<li><strong>Decoded copies</strong> of Opus, WMA and other songs dubplate can't read by itself you've put on rekordbox sticks (as FLAC, so they can be analysed and converted). These take space, several times the size of the Opus file. When a song changes, its new copy replaces the old one; copies of songs you've since deleted or renamed stay until you delete the <code>decoded</code> folder inside dubplate's folder, which is always safe: copies are made again when needed.</li>
 </ul>
 <p>These live in <code>%LOCALAPPDATA%\dubplate</code> on Windows and <code>~/.cache/dubplate</code> on Linux. Deleting that folder resets dubplate.</p>
 <p>Rekordbox stick backups are kept in <code>~/.local/share/dubplate/stick-backups</code> on Linux, apart from the cache so cleaning tools leave them alone. On Windows they're in <code>%LOCALAPPDATA%\dubplate\stick-backups</code>, inside the folder above: <strong>resetting dubplate on Windows deletes your stick backups too</strong>, so move that folder somewhere safe first if you want to keep them.</p>
