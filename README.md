@@ -213,7 +213,7 @@ The decks then read the stick as if rekordbox had made it:
   WavPack…) are read through ffmpeg, so they need it installed (dubplate keeps a FLAC copy of
   each in its folder, under `decoded`). Your library's
   files are never changed. Pick "Leave them as they are" for decks that play FLAC
-  (CDJ-2000NXS2, CDJ-3000 and newer); Ogg files, and files above 96 kHz, above 24-bit or
+  (CDJ-2000NXS2, CDJ-3000 and newer); Ogg files, files above 96 kHz or 24-bit, and WAV/AIFF/FLAC
   below 44.1 kHz still won't play there, and dubplate warns about those in the set.
 - **The stick must be a stick.** dubplate refuses a folder that is, or holds, one of your
   library folders, since a rekordbox stick manages its own files.
@@ -376,7 +376,11 @@ By default the page only opens on the computer running dubplate. To open it from
 or laptop too, start it with `dubplate serve --host 0.0.0.0` and visit
 `http://<that computer's name or address>:8765`.
 
-- Anyone on your network can then use it to copy songs from your library (never delete them).
+- Anyone on your network can then use it to copy songs from your library (never delete them)
+  into folders on that computer, and browse its folders to pick where. Use it on a network you
+  trust.
+- Settings, testing the Soulseek connection, rekordbox sticks, updates and installing ffmpeg
+  only work on the computer itself (http://localhost:8765); the page switches them off elsewhere.
 - **Only your songs can be copied from the network**, not other files on that computer.
 - The page answers when opened by this computer's address, its name
   (`myserver`, `myserver.local`, `myserver.fritz.box`…) and local names (`.local`, `.lan`,

@@ -225,7 +225,7 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
   <div id="rbopts" class="hidden">
     <div class="opts"><label>Playlist name <input type="text" id="rb_name" style="min-width:12em" spellcheck="false"></label><button type="button" class="tip" data-tip="The playlist the decks show under PLAYLIST in the stick's library browser. Sending a set with the same name again replaces that playlist; a new name adds one next to the others. Playlists already on the stick, including ones made on a deck, stay.">?</button>
       <label>Songs older decks can't play become
-      <select id="rb_convert"><option value="aiff">AIFF (lossless)</option><option value="mp3">MP3 320 kbps (smaller)</option><option value="wav">WAV (lossless, no tags)</option><option value="none">Leave them as they are</option></select></label><button type="button" class="tip" data-tip="Older decks (CDJ-900/2000, CDJ-2000NXS, XDJ-1000, XDJ-RX…) can't play FLAC, ALAC, Ogg or hi-res files. On a rekordbox stick only MP3, and WAV/AIFF at 44.1/48 kHz, are copied as they are; everything else (AAC too) is converted for the stick - your library's files are never changed. Opus, WMA, APE and WavPack also need ffmpeg. CDJ-2000NXS2, CDJ-3000 and newer play FLAC: pick “Leave them as they are” for those (Ogg files and files above 96 kHz, above 24-bit or below 44.1 kHz still won't play; dubplate warns you about those).">?</button></div>
+      <select id="rb_convert"><option value="aiff">AIFF (lossless)</option><option value="mp3">MP3 320 kbps (smaller)</option><option value="wav">WAV (lossless, no tags)</option><option value="none">Leave them as they are</option></select></label><button type="button" class="tip" data-tip="Older decks (CDJ-900/2000, CDJ-2000NXS, XDJ-1000, XDJ-RX…) can't play FLAC, ALAC, Ogg or hi-res files. On a rekordbox stick only MP3, and WAV/AIFF at 44.1/48 kHz, are copied as they are; everything else (AAC too) is converted for the stick - your library's files are never changed. Opus, WMA, APE and WavPack also need ffmpeg. CDJ-2000NXS2, CDJ-3000 and newer play FLAC: pick “Leave them as they are” for those (Ogg files, files above 96 kHz or 24-bit, and WAV/AIFF/FLAC below 44.1 kHz still won't play; dubplate warns you about those).">?</button></div>
     <p class="small" style="margin:8px 0 0">Each song is analysed once (tempo, beat grid, key, waveforms, a few seconds a song) and remembered, so the next stick is quick. Before anything is written, the stick's library is <b>backed up</b>. Use a <b>FAT32</b> (or exFAT for newer decks) stick. Made with <a href="https://github.com/chrisle/rbxport" target="_blank" rel="noopener">rbxport</a>'s engine.</p>
     <div id="rbbackups" class="small" style="margin-top:8px"></div>
   </div>
@@ -315,7 +315,7 @@ async function info(){const i=await api('/api/info');$('#root').textContent=i.ro
  if(i.appdir)$('#appdir').textContent=i.appdir;
  if(stickMode()&&!$('#dest').value)$('#dest').placeholder=i.windows?'E:\\':'/media/you/USB';
  $('#noffmpeg').classList.toggle('hidden',!!i.ffmpeg);
- if(!i.ffmpeg&&i.windows)$('#ffmpeghelp').innerHTML=i.here===false?'Install ffmpeg on the computer dubplate runs on, then restart dubplate.':i.ffmpeg_installing?'Installing ffmpeg… (about a minute)':
+ if(!i.ffmpeg&&i.windows)$('#ffmpeghelp').innerHTML=i.ffmpeg_installing?'Installing ffmpeg… (about a minute)':i.here===false?'Install ffmpeg on the computer dubplate runs on, then restart dubplate.':
    `<button id="getffmpeg">Install ffmpeg now</button> <span class="small">free, about a minute</span>`+(i.ffmpeg_log?`<br><span class="small">Last try: ${esc(i.ffmpeg_log)}</span>`:'');
  const gf=$('#getffmpeg');if(gf)gf.onclick=async()=>{const r=await api('/api/install_ffmpeg',{});if(r&&r.error){$('#ffmpeghelp').textContent=r.error;return}info()};
  if(i.ffmpeg_installing)setTimeout(info,2000);
@@ -536,7 +536,7 @@ async function openSettings(msg){SET=await api('/api/settings');$('#setcard').cl
  $('#set_url').value=SET.slskd.url;$('#set_key').value='';keyState();
  $('#set_music').disabled=$('[data-browse=set_music]').disabled=!!SET.music_from_cli;
  $('#musicnote').textContent=SET.music_from_cli?'dubplate was started with --music, so that folder is used. Start it without --music to choose here.':'';
- $('#setmsg').textContent=msg||'';$('#slskdstatus').textContent='';drawExtras();$('#setcard').scrollIntoView({behavior:'smooth'});if(SET.slskd.key_set)testSlskd(true)}
+ $('#setmsg').textContent=window.INFO&&INFO.here===false?AWAY:(msg||'');$('#slskdstatus').textContent='';drawExtras();$('#setcard').scrollIntoView({behavior:'smooth'});if(SET.slskd.key_set)testSlskd(true)}
 $('#opensettings').onclick=e=>{e.preventDefault();openSettings()};$('#setclose').onclick=()=>$('#setcard').classList.add('hidden');
 document.querySelector('[data-browse=set_music]').onclick=()=>pick($('#br_set_music'),$('#set_music').value||'~','Use this folder',f=>$('#set_music').value=f);
 $('#addextra').onclick=()=>pick($('#br_extra'),'~','Add this folder',f=>{if(!EXTRAS.some(x=>x.path===f))EXTRAS.push({path:f,exists:true});drawExtras()});
@@ -585,9 +585,10 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')hideTip()});
 addEventListener('scroll',hideTip,{passive:true});
 // opened from another device: rekordbox sticks and updates only work on the computer dubplate
 // runs on, so those controls are switched off here with a word on why (the server refuses them too)
-const AWAY=`This only works on the computer dubplate runs on, opened as http://localhost:${location.port||8765}.`;
+let AWAY='This only works on the computer dubplate runs on.';
 function remoteLimits(){if(!window.INFO||INFO.here!==false)return;
- $('#setsave').disabled=true;$('#disconnect').disabled=true;$('#setmsg').textContent=AWAY;
+ AWAY=`This only works on the computer dubplate runs on, opened there as http://localhost:${INFO.port||8765}.`;
+ $('#setsave').disabled=true;$('#disconnect').disabled=true;$('#testslskd').disabled=true;$('#setmsg').textContent=AWAY;
  const t=$('#tab_rb');if(!t.disabled){t.disabled=true;t.title=AWAY;t.insertAdjacentHTML('beforeend',`<span class="small" style="color:var(--warn)">${AWAY}</span>`)}
  if(MODE==='rb'){MODE='files';showMode()}
  $('#updauto').disabled=true;$('#updgo').disabled=true;$('#updmsg').textContent=AWAY;

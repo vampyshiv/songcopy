@@ -58,8 +58,8 @@
 <pre><code>dubplate serve --host 0.0.0.0</code></pre>
 <p>Then open <code>http://computer-name:8765</code> (or the computer's address) on the other device.</p>
 <ul>
-<li>Anyone on your network can then copy songs from your library. They can't delete anything, and only songs from your library can be copied, never other files on the computer.</li>
-<li>Settings, rekordbox sticks (making and restoring), updates and installing ffmpeg only work on the computer itself, opened as <code>http://localhost:8765</code>; on other devices those controls are switched off.</li>
+<li>Anyone on your network can then copy songs from your library into a folder on that computer, and browse its folders to pick where. They can't delete anything, and only songs from your library can be copied, never other files. Only turn this on at home, on a network you trust.</li>
+<li>Settings (including testing the Soulseek connection), rekordbox sticks (making and restoring), updates and installing ffmpeg only work on the computer itself, opened as <code>http://localhost:8765</code>; on other devices those controls are switched off.</li>
 <li>Behind a reverse proxy with its own web address, allow that name too: <code>--allow-host dubplate.example.com</code>.</li>
 </ul>
 

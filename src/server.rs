@@ -72,6 +72,8 @@ struct Ctx {
     local_only: bool,
     allow_hosts: Vec<String>,
     music_from_cli: bool,
+    /// the port dubplate listens on (the page tells other devices where to open it locally)
+    port: u16,
 }
 
 fn when(t: Option<chrono::NaiveDateTime>) -> Value {
@@ -190,6 +192,7 @@ pub fn serve(o: Options) {
         dest: o.dest,
         local_only: o.host == "127.0.0.1" || o.host == "localhost",
         music_from_cli: o.music_from_cli,
+        port: o.port,
         allow_hosts: {
             // this computer's own name, plus any the user allowed
             let mut a: Vec<String> = o
@@ -327,6 +330,9 @@ fn handle(ctx: &Ctx, mut req: tiny_http::Request) {
         (json!({"error": "A stick can only be restored on the computer dubplate is running on."}), false)
     } else if path == "/api/rekordbox" && !here {
         (json!({"error": "Rekordbox sticks can only be made on the computer dubplate is running on."}), false)
+    } else if path == "/api/slskd/test" && !here {
+        // it makes this computer contact the address given
+        (json!({"error": "The Soulseek connection can only be tested on the computer dubplate is running on."}), false)
     } else if path == "/api/install_ffmpeg" && !here {
         (json!({"error": "ffmpeg can only be installed on the computer dubplate is running on."}), false)
     } else if matches!(path.as_str(), "/api/update/apply" | "/api/update/rollback" | "/api/update/settings") && !here {
@@ -442,7 +448,7 @@ fn get(ctx: &Ctx, path: &str, q: &HashMap<String, String>, here: bool) -> Value 
                 "home": home, "dest": ctx.dest.clone().unwrap_or_default(),
                 // opened on the computer dubplate runs on (settings, rekordbox sticks and updates
                 // only work there)
-                "here": here,
+                "here": here, "port": ctx.port,
                 "example": join(&join(&home, "Desktop"), "My songs"),
             })
         }
@@ -1462,6 +1468,7 @@ mod tests {
             local_only: true,
             allow_hosts: vec![],
             music_from_cli: false,
+            port: 8765,
         };
         let r = root.to_string_lossy().into_owned();
         assert!(in_library(&ctx, &paths::join(&r, "in.mp3")));

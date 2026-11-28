@@ -69,16 +69,32 @@ impl Tags {
     }
 }
 
-/// the analyser opened the file but has no decoder for what's in it (Opus in an .ogg, an
-/// unusual AIFF-C or WAV codec): ffmpeg's job. A damaged file fails differently and is reported.
+/// the analyser read the file but has no decoder for what's in it (Opus in an .ogg, an unusual
+/// AIFF-C or WAV codec, an AAC feature it lacks): ffmpeg's job. A damaged file (a missing header
+/// or chunk, a truncated download) is reported as it is.
 fn cannot_decode(err: &str) -> bool {
-    err.contains("unsupported feature") || err.contains("no audio track") || err.contains("decoded no samples")
+    const CODEC: [&str; 7] = [
+        "unsupported codec",
+        "Compression type",
+        "unsupported wave format",
+        "unsupported fmt_ext",
+        "too complex",
+        "no audio track",
+        "the file has no audio in it",
+    ];
+    CODEC.iter().any(|c| err.contains(c))
 }
 
 /// file types the analyser decodes itself (the rest go through ffmpeg)
 fn analyser_reads(path: &str) -> bool {
     let ext = Path::new(path).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     matches!(ext.as_str(), "mp3" | "m4a" | "mp4" | "aac" | "alac" | "flac" | "wav" | "aif" | "aiff" | "aifc" | "ogg" | "oga")
+}
+
+/// WAV, AIFF and FLAC files: decks play those at 44.1 kHz and above only (MP3 and AAC lower too)
+fn lossless_file(path: &Path) -> bool {
+    let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    matches!(ext.as_str(), "wav" | "aif" | "aiff" | "flac")
 }
 
 /// file types a deck plays at all (CDJ-2000NXS2 / CDJ-3000 and newer, for "leave them as they are")
@@ -197,6 +213,9 @@ fn load_cached(base: &str) -> Option<SourceTrack> {
     if !t.source_path.is_file() {
         return None; // a decoded copy (see `decoded_copy`) that has been cleared away
     }
+    if t.source_path.starts_with(Path::new(&paths::app_dir()).join("decoded")) {
+        mark_used(&t.source_path.to_string_lossy());
+    }
     for ext in ["DAT", "EXT", "2EX"] {
         if let Ok(b) = std::fs::read(format!("{base}.{ext}")) {
             t.analysis.push((ext.to_string(), b));
@@ -216,6 +235,33 @@ fn save_cached(base: &str, t: &SourceTrack) {
     }
 }
 
+/// note that a decoded copy is in use now (its folder's `used` file): copies are cleared away
+/// only a day after they were last used
+fn mark_used(copy: &str) {
+    if let Some(dir) = Path::new(copy).parent() {
+        let _ = std::fs::write(dir.join("used"), b"");
+    }
+}
+
+/// a song's other decoded versions that haven't been used for a day, and decodes cut off
+/// partway (a partial file nobody has written to for ten minutes)
+fn sweep_decoded(song_dir: &str, current: &str) {
+    let age = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).map_or(0, |d| d.as_secs());
+    for v in std::fs::read_dir(song_dir).into_iter().flatten().flatten() {
+        let used = v.path().join("used");
+        let last_use = if used.exists() { age(&used) } else { age(&v.path()) };
+        if v.file_name().to_string_lossy() != current && last_use > 86400 {
+            let _ = std::fs::remove_dir_all(v.path());
+            continue;
+        }
+        for f in std::fs::read_dir(v.path()).into_iter().flatten().flatten() {
+            if f.file_name().to_string_lossy().starts_with(".decoding-") && age(&f.path()) > 600 {
+                let _ = std::fs::remove_file(f.path());
+            }
+        }
+    }
+}
+
 /// A FLAC copy of a song the analyser can't decode (Opus, WMA, …), made once with ffmpeg and
 /// kept with dubplate's saved analysis. It carries the song's own file name, so the stick shows
 /// that name; the library's file is only read.
@@ -232,28 +278,25 @@ fn decoded_copy(src: &str) -> Result<String, String> {
     let dir = join(&song_dir, &version);
     let stem = Path::new(src).file_stem().map_or_else(|| "song".into(), |s| s.to_string_lossy().into_owned());
     let out = join(&dir, &format!("{stem}.flac"));
+    sweep_decoded(&song_dir, &version);
     if paths::isfile(&out) {
+        mark_used(&out);
         return Ok(out);
     }
-    // older versions of this song's copy go, once nothing could still be reading them (another
-    // dubplate exporting right now): after a day
-    let old = |e: &std::fs::DirEntry| e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|d| d.as_secs() > 86400);
-    for e in std::fs::read_dir(&song_dir).into_iter().flatten().flatten() {
-        if e.file_name().to_string_lossy() != version && old(&e) {
-            let _ = std::fs::remove_dir_all(e.path());
-        }
-    }
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    // a decode cut off earlier (dubplate closed) leaves a partial file: gone after an hour
-    for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
-        let stale = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|d| d.as_secs() > 3600);
-        if e.file_name().to_string_lossy().starts_with(".decoding-") && stale {
-            let _ = std::fs::remove_file(e.path());
-        }
-    }
-    // its own temp name: two dubplates (the page and a terminal) may decode the same song at once
+    mark_used(&out);
+    // its own temp file, made here first: two dubplates (the page and a terminal, or two
+    // containers with the same process id) may decode the same song at once
     static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let part = join(&dir, &format!(".decoding-{}-{}.flac", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+    let mut tries = 0;
+    let part = loop {
+        let p = join(&dir, &format!(".decoding-{}-{}-{}.flac", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::Relaxed), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos())));
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&p) {
+            Ok(_) => break p,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && tries < 100 => tries += 1,
+            Err(e) => return Err(e.to_string()),
+        }
+    };
     let run = crate::copy::quiet(std::process::Command::new(ff).args(["-v", "error", "-nostdin", "-y", "-i"]))
         .arg(format!("file:{}", paths::longp(src)))
         .args(["-map", "0:a:0", "-map_metadata", "0", "-c:a", "flac", "-sample_fmt", "s16", "-f", "flac"])
@@ -295,7 +338,7 @@ pub fn prepare(song: &Song) -> Result<SourceTrack, String> {
     // ffmpeg makes; a damaged file of a kind it does read is reported as it is
     let (source, (analysis, waves, duration)) = match analyse_file(Path::new(&song.path)) {
         Ok(a) => (song.path.clone(), a),
-        Err(first) if !analyser_reads(&song.path) || cannot_decode(&first) => {
+        Err(first) if !analyser_reads(&song.path) || (cannot_decode(&first) && crate::copy::ffmpeg_path().0.is_some()) => {
             let copy = decoded_copy(&song.path).map_err(|e| format!("{first}; {e}"))?;
             let a = analyse_file(Path::new(&copy))?;
             tags.fill_from(read_tags(&copy)); // what the copy says, where the original said nothing
@@ -534,7 +577,7 @@ pub fn export_set(
             if !deck_plays(&t.source_path) {
                 let ext = t.source_path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
                 too_fine.push(format!("{}: decks don't play .{ext} files; choose AIFF to have it converted", t.title));
-            } else if t.sample_rate != 0 && t.sample_rate < 44_100 {
+            } else if t.sample_rate != 0 && t.sample_rate < 44_100 && lossless_file(&t.source_path) {
                 too_fine.push(format!(
                     "{}: {} kHz is below what decks play (44.1 kHz); choose AIFF to have it converted",
                     t.title,
@@ -1527,18 +1570,25 @@ mod tests {
         let before = walk(&decoded).len();
         std::fs::OpenOptions::new().append(true).open(&opus).unwrap().set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(5)).unwrap();
         export_set(&st, "Opus", &[song(&opus)], parse_convert("aiff"), &[], &|_| {}).unwrap();
-        assert_eq!(walk(&decoded).len(), before + 1, "{:?}", walk(&decoded)); // both, for now
-        #[cfg(unix)]
+        assert_eq!(walk(&decoded).len(), before + 2, "{:?}", walk(&decoded)); // both (and its mark), for now
         {
             let day_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 86400);
+            // a partial decode nobody is writing any more
+            let opus_version = walk(&decoded).into_iter().find(|f| f.to_string_lossy().ends_with("A - Opus.flac")).unwrap();
+            let partial = opus_version.parent().unwrap().join(".decoding-1-0-0.flac");
+            std::fs::write(&partial, b"half").unwrap();
+            std::fs::OpenOptions::new().append(true).open(&partial).unwrap().set_modified(day_ago).unwrap();
             for song_dir in std::fs::read_dir(&decoded).unwrap().flatten() {
                 for v in std::fs::read_dir(song_dir.path()).unwrap().flatten() {
-                    std::fs::File::open(v.path()).unwrap().set_modified(day_ago).unwrap();
+                    std::fs::File::open(v.path().join("used")).unwrap().set_modified(day_ago).unwrap();
                 }
             }
             std::fs::OpenOptions::new().append(true).open(&opus).unwrap().set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(10)).unwrap();
             export_set(&st, "Opus", &[song(&opus)], parse_convert("aiff"), &[], &|_| {}).unwrap();
-            assert_eq!(walk(&decoded).len(), before, "{:?}", walk(&decoded));
+            assert!(!partial.exists());
+            // the newest copy (and its mark) stays, the day-old version is gone
+            let files = walk(&decoded);
+            assert_eq!(files.iter().filter(|f| f.to_string_lossy().contains("A - Opus.flac")).count(), 1, "{files:?}");
         }
     }
 
