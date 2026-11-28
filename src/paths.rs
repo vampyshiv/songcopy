@@ -452,14 +452,14 @@ fn write_atomic_as(path: &str, data: &[u8], private: bool) -> std::io::Result<()
             }
         }
     };
-    let mut f = file?; // (on failure there's nothing of ours to clean up)
+    let f = file?; // (on failure there's nothing of ours to clean up)
     // on the disk before it takes the real name, so a crash or a pulled stick never leaves an
-    // empty file under it
-    let mut r = (|| {
+    // empty file under it; closed before it's renamed
+    let mut r = (move |mut f: std::fs::File| {
         use std::io::Write;
         f.write_all(data)?;
         f.sync_all()
-    })();
+    })(f);
     #[cfg(unix)]
     if private && r.is_ok() {
         use std::os::unix::fs::PermissionsExt;
@@ -523,8 +523,9 @@ mod tests {
         let path = tmp.path().join("settings.json").to_string_lossy().into_owned();
         // the next few temp names this process would pick are already taken (a crash, a
         // container restarted with the same process id)
+        // (a wide range: other tests running alongside also take temp names)
         let next = TMP.load(std::sync::atomic::Ordering::Relaxed);
-        let taken: Vec<String> = (next..next + 3).map(|n| format!("{path}.{}-{n}.tmp", std::process::id())).collect();
+        let taken: Vec<String> = (next..next + 60).map(|n| format!("{path}.{}-{n}.tmp", std::process::id())).collect();
         for t in &taken {
             std::fs::write(t, b"someone else's").unwrap();
         }

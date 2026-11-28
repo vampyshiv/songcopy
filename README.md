@@ -209,11 +209,12 @@ The decks then read the stick as if rekordbox had made it:
   including ones made on a deck or by rekordbox.
 - **Songs older decks can't play are converted** for the stick. MP3, and WAV/AIFF at
   44.1/48 kHz, are copied as they are; everything else (FLAC, ALAC, AAC, Ogg, hi-res) becomes
-  AIFF (default), MP3 320 or WAV. Opus and WMA are read through ffmpeg, so they need it
-  installed (dubplate keeps a FLAC copy of each in its folder, under `decoded`). Your library's
+  AIFF (default), MP3 320 or WAV. Formats dubplate can't decode itself (Opus, WMA, APE,
+  WavPack…) are read through ffmpeg, so they need it installed (dubplate keeps a FLAC copy of
+  each in its folder, under `decoded`). Your library's
   files are never changed. Pick "Leave them as they are" for decks that play FLAC
-  (CDJ-2000NXS2, CDJ-3000 and newer); Ogg and files above 96 kHz or 24-bit still won't play
-  there, and dubplate warns about any in the set.
+  (CDJ-2000NXS2, CDJ-3000 and newer); Ogg files, and files above 96 kHz, above 24-bit or
+  below 44.1 kHz still won't play there, and dubplate warns about those in the set.
 - **The stick must be a stick.** dubplate refuses a folder that is, or holds, one of your
   library folders, since a rekordbox stick manages its own files.
 - Use a **FAT32** stick (exFAT works on newer decks).

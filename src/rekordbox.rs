@@ -69,6 +69,12 @@ impl Tags {
     }
 }
 
+/// the analyser opened the file but has no decoder for what's in it (Opus in an .ogg, an
+/// unusual AIFF-C or WAV codec): ffmpeg's job. A damaged file fails differently and is reported.
+fn cannot_decode(err: &str) -> bool {
+    err.contains("unsupported feature") || err.contains("no audio track") || err.contains("decoded no samples")
+}
+
 /// file types the analyser decodes itself (the rest go through ffmpeg)
 fn analyser_reads(path: &str) -> bool {
     let ext = Path::new(path).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
@@ -113,15 +119,16 @@ fn analyse_file(path: &Path) -> Result<(rbl_analysis::Analysis, rbl_anlz::Rekord
     let mut stream = rbl_audio::MonoStream::open(path).map_err(|e| format!("can't read the audio ({e})"))?;
     let rate = stream.sample_rate();
     let mut creator = rbl_analysis::wave_creator::WaveCreator::new(rate);
-    if let Some(frames) = stream.expected_frames() {
-        creator.reserve(frames);
-    }
-    let cap = (DECODE_CAP_SECS * f64::from(rate)) as usize;
-    // sized up front when the length is known, so a long file doesn't double the buffer past the cap
     // (an estimate is only trusted up to what the file's size allows: a broken header can claim
     // hours)
     let bytes = std::fs::metadata(path).map_or(0, |m| m.len());
-    let plausible = usize::try_from(bytes.saturating_mul(16)).unwrap_or(usize::MAX);
+    let plausible = bytes.saturating_mul(16);
+    if let Some(frames) = stream.expected_frames() {
+        creator.reserve(frames.min(plausible));
+    }
+    let cap = (DECODE_CAP_SECS * f64::from(rate)) as usize;
+    // sized up front when the length is known, so a long file doesn't double the buffer past the cap
+    let plausible = usize::try_from(plausible).unwrap_or(usize::MAX);
     let start = stream.expected_frames().map_or(1 << 22, |f| usize::try_from(f).unwrap_or(cap)).min(plausible).min(cap);
     let mut head: Vec<f32> = Vec::with_capacity(start);
     let mut builder: Option<rbl_analysis::waveform::Builder> = None; // only for songs past the cap
@@ -139,6 +146,7 @@ fn analyse_file(path: &Path) -> Result<(rbl_analysis::Analysis, rbl_anlz::Rekord
             let mut b = rbl_analysis::waveform::Builder::new(rate);
             b.push(&head);
             b.push(chunk);
+            head.reserve_exact(cap - head.len());
             head.extend_from_slice(&chunk[..cap - head.len()]);
             builder = Some(b);
             past_head = true;
@@ -227,12 +235,22 @@ fn decoded_copy(src: &str) -> Result<String, String> {
     if paths::isfile(&out) {
         return Ok(out);
     }
+    // older versions of this song's copy go, once nothing could still be reading them (another
+    // dubplate exporting right now): after a day
+    let old = |e: &std::fs::DirEntry| e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|d| d.as_secs() > 86400);
     for e in std::fs::read_dir(&song_dir).into_iter().flatten().flatten() {
-        if e.file_name().to_string_lossy() != version {
+        if e.file_name().to_string_lossy() != version && old(&e) {
             let _ = std::fs::remove_dir_all(e.path());
         }
     }
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    // a decode cut off earlier (dubplate closed) leaves a partial file: gone after an hour
+    for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+        let stale = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|d| d.as_secs() > 3600);
+        if e.file_name().to_string_lossy().starts_with(".decoding-") && stale {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
     // its own temp name: two dubplates (the page and a terminal) may decode the same song at once
     static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let part = join(&dir, &format!(".decoding-{}-{}.flac", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
@@ -277,7 +295,7 @@ pub fn prepare(song: &Song) -> Result<SourceTrack, String> {
     // ffmpeg makes; a damaged file of a kind it does read is reported as it is
     let (source, (analysis, waves, duration)) = match analyse_file(Path::new(&song.path)) {
         Ok(a) => (song.path.clone(), a),
-        Err(first) if !analyser_reads(&song.path) => {
+        Err(first) if !analyser_reads(&song.path) || cannot_decode(&first) => {
             let copy = decoded_copy(&song.path).map_err(|e| format!("{first}; {e}"))?;
             let a = analyse_file(Path::new(&copy))?;
             tags.fill_from(read_tags(&copy)); // what the copy says, where the original said nothing
@@ -514,8 +532,14 @@ pub fn export_set(
     if convert.is_none() {
         for t in &tracks {
             if !deck_plays(&t.source_path) {
-                let ext = t.source_path.extension().map(|e| e.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
-                too_fine.push(format!("{}: no deck plays {ext} files; choose AIFF to have it converted", t.title));
+                let ext = t.source_path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+                too_fine.push(format!("{}: decks don't play .{ext} files; choose AIFF to have it converted", t.title));
+            } else if t.sample_rate != 0 && t.sample_rate < 44_100 {
+                too_fine.push(format!(
+                    "{}: {} kHz is below what decks play (44.1 kHz); choose AIFF to have it converted",
+                    t.title,
+                    f64::from(t.sample_rate) / 1000.0
+                ));
             } else if t.sample_rate > 96_000 || t.metadata.bit_depth > 24 {
                 too_fine.push(format!(
                     "{}: {} kHz / {}-bit is more than any deck plays; choose AIFF to have it converted",
@@ -1473,17 +1497,18 @@ mod tests {
         };
         let opus = mk("A - Opus.opus", &["-c:a", "libopus"]).unwrap();
         let aac = mk("A - Aac.m4a", &["-c:a", "aac"]).unwrap();
+        let ogg_opus = mk("A - Opus In Ogg.ogg", &["-c:a", "libopus"]).unwrap();
         let hires = mk("A - Hires.flac", &["-ar", "192000", "-sample_fmt", "s32"]).unwrap();
         let song = |p: &String| Song { path: p.clone(), artist: "A".into(), title: String::new(), album: String::new() };
         let stick = tmp.path().join("stick");
         std::fs::create_dir_all(&stick).unwrap();
         let st = stick.to_string_lossy().into_owned();
-        let set: Vec<Song> = [&ogg, &opus, &aac].into_iter().map(song).collect();
+        let set: Vec<Song> = [&ogg, &opus, &aac, &ogg_opus].into_iter().map(song).collect();
         let r = export_set(&st, "Formats", &set, parse_convert("aiff"), &[], &|_| {}).unwrap();
         assert!(r.errors.is_empty(), "{r:?}");
-        assert_eq!((r.tracks, r.converted), (3, 3), "{r:?}");
+        assert_eq!((r.tracks, r.converted), (4, 4), "{r:?}");
         let v = rbl_export::verify(&stick).unwrap();
-        assert!(v.is_ok() && v.tracks == 3 && v.analysis_present == 3, "{v:?}");
+        assert!(v.is_ok() && v.tracks == 4 && v.analysis_present == 4, "{v:?}");
         // the Opus song is on the stick under its own name
         let names: Vec<String> = walk(&stick.join("Contents")).iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
         assert!(names.iter().any(|n| n.starts_with("A - Opus")), "{names:?}");
@@ -1492,16 +1517,29 @@ mod tests {
         // left as they are: a file no deck plays is pointed out
         let r = export_set(&st, "Hires", &[song(&hires), song(&ogg)], None, &[], &|_| {}).unwrap();
         assert!(r.warnings.iter().any(|w| w.contains("192 kHz")), "{r:?}");
-        assert!(r.warnings.iter().any(|w| w.contains("no deck plays OGG")), "{r:?}");
+        assert!(r.warnings.iter().any(|w| w.contains("don't play .ogg")), "{r:?}");
         // Opus left as it is goes on as its FLAC copy, which those decks play: no warning
         let r = export_set(&st, "Opus", &[song(&opus)], None, &[], &|_| {}).unwrap();
         assert!(r.warnings.is_empty() && r.errors.is_empty(), "{r:?}");
-        // a retagged Opus file gets a fresh copy, and the old one is cleared away
+        // a retagged Opus file gets a fresh copy; the old one is cleared away once it's a day old
+        // (another dubplate may still be reading it)
         let decoded = Path::new(&paths::app_dir()).join("decoded");
         let before = walk(&decoded).len();
         std::fs::OpenOptions::new().append(true).open(&opus).unwrap().set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(5)).unwrap();
         export_set(&st, "Opus", &[song(&opus)], parse_convert("aiff"), &[], &|_| {}).unwrap();
-        assert_eq!(walk(&decoded).len(), before, "{:?}", walk(&decoded));
+        assert_eq!(walk(&decoded).len(), before + 1, "{:?}", walk(&decoded)); // both, for now
+        #[cfg(unix)]
+        {
+            let day_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 86400);
+            for song_dir in std::fs::read_dir(&decoded).unwrap().flatten() {
+                for v in std::fs::read_dir(song_dir.path()).unwrap().flatten() {
+                    std::fs::File::open(v.path()).unwrap().set_modified(day_ago).unwrap();
+                }
+            }
+            std::fs::OpenOptions::new().append(true).open(&opus).unwrap().set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(10)).unwrap();
+            export_set(&st, "Opus", &[song(&opus)], parse_convert("aiff"), &[], &|_| {}).unwrap();
+            assert_eq!(walk(&decoded).len(), before, "{:?}", walk(&decoded));
+        }
     }
 
     #[test]

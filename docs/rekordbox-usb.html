@@ -76,14 +76,14 @@
 
 <h2 id="formats">Which format?</h2>
 <p>On a rekordbox stick, MP3 files, and WAV or AIFF files at 44.1 or 48 kHz, are copied as they are. Everything else (FLAC, ALAC, AAC/M4A, Ogg, hi-res files) is converted for the stick. Your library's files are never changed.</p>
-<p>dubplate converts most files by itself. A few formats it can't read on its own (Opus, WMA) need <a href="usb-sticks.html#converting-needs-ffmpeg">ffmpeg</a> installed; without it, those songs are left out and listed.</p>
+<p>dubplate converts most files by itself. Formats it can't read on its own (Opus, WMA, APE, WavPack and a few rarer ones) need <a href="usb-sticks.html#converting-needs-ffmpeg">ffmpeg</a> installed; without it, those songs are left out and listed.</p>
 <div class="tablewrap"><table>
 <thead><tr><th>Choose</th><th>When</th></tr></thead>
 <tbody>
 <tr><td>AIFF (lossless)</td><td>The safe default: full quality, plays on every deck.</td></tr>
 <tr><td>MP3 320 kbps</td><td>When space on the stick matters. About a quarter of the size.</td></tr>
 <tr><td>WAV (lossless)</td><td>If you specifically want WAV.</td></tr>
-<tr><td>Leave them as they are</td><td>For decks that play FLAC: CDJ-2000NXS2, CDJ-3000 and newer. Some files still won't play on those (Ogg, and anything above 96 kHz or 24-bit); dubplate warns you about any in your set, so pick AIFF for those sets.</td></tr>
+<tr><td>Leave them as they are</td><td>For decks that play FLAC: CDJ-2000NXS2, CDJ-3000 and newer. Some files still won't play on those (Ogg files, and files above 96 kHz, above 24-bit or below 44.1 kHz); dubplate warns you about those in your set, so pick AIFF for such sets.</td></tr>
 </tbody></table></div>
 <p>Converted copies don't carry tags inside the file, but that doesn't matter on the decks: the title, artist, album, BPM and key come from the stick's library.</p>
 
