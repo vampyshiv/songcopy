@@ -97,6 +97,12 @@ pub struct Track {
     pub size: u64,
     #[serde(default)]
     pub n_dirartist: String,
+    /// last-modified time (seconds), so a song's tags are only read again when it changes
+    #[serde(default)]
+    pub mtime: u64,
+    /// the file's own tags were looked at (its name isn't "Artist - Album - 07 - Title")
+    #[serde(default)]
+    pub tags_read: bool,
     #[serde(skip)]
     pub n_artist: String,
     #[serde(skip)]
@@ -291,7 +297,7 @@ impl Library {
     /// read every audio file in every library folder (depth first, sorted). Songs from the
     /// "also look in" folders get that folder's name in front of their path, so it's clear where
     /// they are. A folder that's inside another one is only read once.
-    fn walk(&self, roots: &[String], mut each: impl FnMut(String, String, &str, u64)) {
+    fn walk(&self, roots: &[String], mut each: impl FnMut(String, String, &str, u64, u64)) {
         let mut visited: HashSet<std::path::PathBuf> = HashSet::new();
         let mut labels: Vec<String> = Vec::new();
         for (i, root) in roots.iter().enumerate() {
@@ -310,7 +316,7 @@ impl Library {
         root: &str,
         label: &str,
         visited: &mut HashSet<std::path::PathBuf>,
-        each: &mut impl FnMut(String, String, &str, u64),
+        each: &mut impl FnMut(String, String, &str, u64, u64),
     ) {
         let mut stack: Vec<(String, String)> = vec![(root.to_string(), String::new())];
         // folders already read (by their real location): a symlink pointing back up the tree
@@ -362,7 +368,12 @@ impl Library {
                     }
                     subdirs.push((join(&dir, &name), r));
                 } else if is_audio(&name) {
-                    each(join(root, &r), r, label, meta.len());
+                    let mtime = meta
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map_or(0, |d| d.as_secs());
+                    each(join(root, &r), r, label, meta.len(), mtime);
                 }
             }
             stack.extend(subdirs.into_iter().rev());
@@ -406,11 +417,34 @@ impl Library {
             self.again.store(false, Ordering::SeqCst);
             self.progress.store(0, Ordering::SeqCst);
             let roots = self.roots();
+            // tags read by the last scan (or the saved copy): unchanged files aren't opened again
+            let known: HashMap<String, (u64, u64, String, String, String)> = self
+                .data
+                .read()
+                .unwrap()
+                .files
+                .iter()
+                .filter(|f| f.tags_read)
+                .map(|f| {
+                    (f.path.clone(), (f.size, f.mtime, f.artist.clone(), f.album.clone(), f.title.clone()))
+                })
+                .collect();
             let mut files: Vec<Track> = Vec::new();
-            self.walk(&roots, |full, rel, label, size| {
+            self.walk(&roots, |full, rel, label, size, mtime| {
                 // the song is read from its path inside its own folder ("Album/01 - Title.flac"),
                 // and shown with that folder's name in front ("downloads/Album/01 - Title.flac")
                 let mut t = parse_track(full, rel, size);
+                t.mtime = mtime;
+                if !named_in_full(&t.name) {
+                    // a name like "02. Kill for Love.flac" (downloads, rips): the tags say more
+                    match known.get(&t.path) {
+                        Some((s, m, a, al, ti)) if *s == size && *m == mtime => {
+                            (t.artist, t.album, t.title) = (a.clone(), al.clone(), ti.clone());
+                        }
+                        _ => apply_tags(&mut t),
+                    }
+                    t.tags_read = true;
+                }
                 if !label.is_empty() {
                     t.rel = format!("{label}{SEP}{}", t.rel);
                 }
@@ -441,8 +475,12 @@ impl Library {
                 Some(p) => &f.rel[..p],
                 None => &f.rel[..],
             };
-            let toks: HashSet<String> =
+            let mut toks: HashSet<String> =
                 tokens(&without_ext.replace(SEP, " ")).into_iter().collect();
+            if f.tags_read {
+                // artist/title from the tags may not be in the path at all
+                toks.extend(tokens(&format!("{} {} {}", f.artist, f.album, f.title)));
+            }
             for t in toks {
                 index.entry(t).or_default().push(i);
             }
@@ -508,6 +546,34 @@ impl Library {
             .and_then(|w| chrono::NaiveDateTime::parse_from_str(&w, "%Y-%m-%dT%H:%M:%S%.f").ok());
         self.install(c.files, when);
         true
+    }
+}
+
+/// is the file named "Artist - Album - 07 - Title.ext" (everything is in the name)?
+fn named_in_full(name: &str) -> bool {
+    FNAME_RE.is_match(splitext(name).0)
+}
+
+/// use the file's own artist / album / title tags where it has them (the path's guess stays
+/// for any that are missing)
+fn apply_tags(t: &mut Track) {
+    use lofty::prelude::*;
+    let opts = lofty::config::ParseOptions::new().read_properties(false);
+    let Ok(f) = lofty::probe::Probe::open(&t.path).and_then(|p| p.options(opts).read()) else {
+        return;
+    };
+    let Some(tag) = f.primary_tag().or_else(|| f.first_tag()) else { return };
+    let get = |v: Option<std::borrow::Cow<'_, str>>| {
+        v.map(|x| x.trim().to_string()).filter(|x| !x.is_empty())
+    };
+    if let Some(a) = get(tag.artist()) {
+        t.artist = a;
+    }
+    if let Some(a) = get(tag.album()) {
+        t.album = a;
+    }
+    if let Some(a) = get(tag.title()) {
+        t.title = a;
     }
 }
 
