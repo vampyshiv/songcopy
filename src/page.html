@@ -532,7 +532,7 @@ function drawExtras(){$('#extras').innerHTML=EXTRAS.length?EXTRAS.map((f,k)=>`<d
  const dl=SLSKD&&SLSKD.downloads_here,has=dl&&EXTRAS.some(f=>f.path===dl);
  $('#addslskdfolder').classList.toggle('hidden',!dl||has);if(dl)$('#addslskdfolder').textContent='+ Add slskd’s download folder';
  $('#slskdfolderinfo').textContent=SLSKD&&SLSKD.downloads&&!SLSKD.downloads_here?`slskd saves downloads to “${SLSKD.downloads}”, which isn't a folder on this computer (slskd probably runs in Docker, where folders have other names). Use “+ Add a folder…” to pick the same folder as this computer sees it.`:(dl&&!has?`slskd saves downloads to ${dl}. Add it so songs you download are found.`:'')}
-async function openSettings(msg){SET=await api('/api/settings');$('#setcard').classList.remove('hidden');$('#set_music').value=SET.music;EXTRAS=SET.extra_folders;
+async function openSettings(msg){SET=await api('/api/settings');$('#setcard').classList.remove('hidden');$('#set_music').value=SET.music;EXTRAS=SET.extra_folders.map(f=>({...f}));
  $('#set_url').value=SET.slskd.url;$('#set_key').value='';keyState();
  $('#set_music').disabled=$('[data-browse=set_music]').disabled=!!SET.music_from_cli;
  $('#musicnote').textContent=SET.music_from_cli?'dubplate was started with --music, so that folder is used. Start it without --music to choose here.':'';
@@ -562,7 +562,7 @@ $('#setsave').onclick=async()=>{$('#setmsg').textContent='Saving…';const body=
  const k=$('#set_key').value.trim();if(k)body.slskd_key=k;
  if(!Object.keys(body).length){$('#setmsg').textContent='Nothing changed.';return}
  const r=await api('/api/settings',body);if(r.error){$('#setmsg').innerHTML=`<span style="color:var(--bad)">${esc(r.error)}</span>`;return}
- SET=r;EXTRAS=r.extra_folders;drawExtras();$('#set_key').value='';keyState();
+ SET=r;EXTRAS=r.extra_folders.map(f=>({...f}));drawExtras();$('#set_key').value='';keyState();
  $('#setmsg').innerHTML='<span style="color:var(--ok)">✓ Saved.</span> Reading the library again…';await info();if(RESULTS.length)render();
  const done=async()=>{const i=await api('/api/info');if(i.scanning)return setTimeout(done,1000);info();
   $('#setmsg').innerHTML=`<span style="color:var(--ok)">✓ Saved.</span> ${i.count.toLocaleString()} songs in your library folders.`+(window.LAST?' <a href="#" id="rematch">Look for your list again</a>':'');
