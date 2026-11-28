@@ -2,6 +2,28 @@
 
 Each version's notes are shown in dubplate's update card before you install it.
 
+## 1.0.0-alpha.2
+
+**Test build.** Fixes found by a full bug check, and Soulseek downloads are found again.
+
+- **Songs you download are found.** Files that aren't named "Artist - Album - 07 - Title"
+  (slskd keeps the uploader's names, like `02. Kill for Love.flac`) are now recognised by
+  their tags. Add slskd's download folder under **⚙ Settings → Also look in**, then Save.
+- **Rekordbox sticks take more formats:** Ogg Vorbis directly; Opus, WMA and unusual WAV/AIFF
+  through ffmpeg (named when it's missing). Damaged files are reported as damaged.
+- Warnings before export for files the decks can't play as they are (Ogg, above 96 kHz/24-bit,
+  very low sample rates) when you choose **leave them as they are**.
+- A stick that is, holds or sits inside one of your library folders is refused.
+- **Restore** also puts back files rbxport recovered, and never overwrites.
+- Converted copies of songs are kept in dubplate's `decoded` folder; a song's new copy replaces
+  its old one. Deleting that folder is always safe (it fills again when needed).
+- **From another device** (phone, laptop) the page says what you can do there: updates,
+  Settings, ffmpeg installs and rekordbox sticks only work on the computer dubplate runs on.
+- The updater ignores a check made by another version, waits 30 minutes after a failed one,
+  and never offers test builds to regular ones.
+- Saving settings and other files can't be broken by a leftover temp file.
+- Guides and help match what dubplate really does.
+
 ## 1.0.0-alpha.1
 
 **Test build.** dubplate is in alpha until 1.0: builds are published as pre-releases and
