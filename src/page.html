@@ -116,7 +116,7 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
 <li><b>Rekordbox USB</b>: a stick the decks read like one made in rekordbox. Your set becomes a playlist in the deck's library browser (under PLAYLIST) with BPM, key, beat grids and waveforms, without rekordbox. Each song is analysed once and remembered. Several sets can share a stick, and sending a set with the same name again replaces it. The stick's library is backed up before every export, and <b>Restore…</b> puts a backup back. Try a stick on your decks before a gig.</li>
 </ul>
 <h3>Finding missing songs on Soulseek</h3>
-<p>If you use <a href="https://github.com/slskd/slskd" target="_blank" rel="noopener">slskd</a> (a Soulseek client), connect it in <b>⚙ Settings</b>. Then <b>🔎 Find on Soulseek</b> looks for the red and purple songs. dubplate picks the best file for each (the right version, good quality, someone who can send it soon) and shows it under the song, with other choices in a menu. Untick or change any, then click <b>Download</b>. When the downloads finish, dubplate reads your library again and they turn green, ready to copy. Add slskd's download folder under <b>Also look in</b> so they're found.</p>
+<p>If you use <a href="https://github.com/slskd/slskd" target="_blank" rel="noopener">slskd</a> (a Soulseek client), connect it in <b>⚙ Settings</b>. Then <b>🔎 Find on Soulseek</b> looks for the red and purple songs (a yellow best guess that's wrong has its own <b>🔎 Find on Soulseek</b> link). dubplate picks the best file for each (the right version, good quality, someone who can send it soon) and shows it under the song, with other choices in a menu. Untick or change any, then click <b>Download</b>. When the downloads finish, dubplate reads your library again and they turn green, ready to copy. Add slskd's download folder under <b>Also look in</b> so they're found.</p>
 <h3>Settings</h3>
 <p><b>⚙ Settings</b> (top of the page): your main music folder, other folders to also look in (a second drive, a downloads folder), and the Soulseek connection. Settings can only be changed on the computer dubplate runs on.</p>
 <h3>It remembers what it copied</h3>
@@ -345,7 +345,7 @@ function fileCell(r,i){
  +` <button class="play" data-play="${esc(f.path)}" title="Listen">▶</button><div class="path">${esc(f.rel)}</div>`;
  if(r.note)h+=`<div class="note">${esc(r.note)}</div>`;
  if(r.alternatives.length){h+=`<div class="sugg"><select data-alt="${i}"><option value="">${r.alternatives.length} other version${r.alternatives.length>1?'s':''} in your library…</option>`+r.alternatives.map((a,k)=>`<option value="${k}">${esc(a.rel)}</option>`).join('')+`</select></div>`}
- return h+(r.status==='version'?soulBlock(i):'')}
+ return h+(r.status==='version'||r.status==='guess'?soulBlock(i):'')}
 function render(){
  const c={found:0,guess:0,version:0,missing:0,copied:0};RESULTS.forEach(r=>r.copied?c.copied++:c[r.status]++);
  $('#summary').innerHTML=(c.found||!c.copied?`<span class="pill ok ${FILTER==='found'?'active':''}" data-f="found">✓ ${c.found} ${c.copied?'new ':''}found</span>`:'')+
@@ -496,7 +496,7 @@ $('#souldl').onclick=async()=>{const want=Object.entries(SOUL).filter(([i,S])=>S
  let r;try{r=await api('/api/slskd/download',{items})}catch(e){r={error:'dubplate didn\'t answer.'}}$('#souldl').disabled=false;
  if(r.error){$('#soulmsg').innerHTML=`<span style="color:var(--bad)">${esc(r.error)}</span>`;return}
  let ok=0,bad=[];want.forEach(([i,S],k)=>{const res=r.results[k]||{},c=S.cands[S.pick];
-  if(res.ok){ok++;DOWNS.push({song:songKey(RESULTS[i]),username:c.username,filename:c.filename,state:'Queued',percent:0,since:Date.now()});S.want=false;S.failed=null}
+  if(res.ok){ok++;DOWNS.push({song:songKey(RESULTS[i]),username:c.username,filename:c.filename,state:'Queued',percent:0,since:Date.now(),guess:RESULTS[i].status==='guess'?RESULTS[i].file.path:null});S.want=false;S.failed=null}
   else bad.push(`${RESULTS[i].label}: ${res.error}`)});
  $('#soulmsg').innerHTML=(ok?`${ok} queued in slskd. Progress shows under each song; as each one finishes, dubplate looks for it in your library.`:'')+
   (bad.length?`<br><span style="color:var(--bad)">Couldn't queue ${bad.length}: ${bad.map(esc).join('; ')}</span>`:'');render();watchTransfers()};
@@ -518,7 +518,7 @@ async function afterDownloads(fresh){$('#soulmsg').textContent='Downloads finish
  for(;;){const i=await api('/api/info');if(!i.scanning)break;await new Promise(ok=>setTimeout(ok,1000))}
  if(window.LAST)await match(window.LAST,true);
  let found=0,still=0;for(const D of fresh){const r=RESULTS.find(r=>songKey(r)===D.song);
-  if(r&&(r.status==='found'||r.status==='guess')){D.found=true;found++}else still++}
+  if(r&&(r.status==='found'||r.status==='guess')&&!(D.guess&&r.file.path===D.guess)){D.found=true;found++}else still++}
  $('#soulmsg').innerHTML=(found?`✓ ${found} downloaded song${found>1?'s are':' is'} now in your library and ready to copy.`:'')+
   (still?` <span style="color:var(--warn)">${still} downloaded but not found in your library folders. Is slskd's download folder one of them? <a href="#" id="soulsettings">⚙ Settings → Also look in</a></span>`:'');
  const ss=$('#soulsettings');if(ss)ss.onclick=e=>{e.preventDefault();openSettings()};render()}
