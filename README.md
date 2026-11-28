@@ -95,6 +95,9 @@ Drop a file onto the page, or click to choose one, or paste the list:
 - **Text files** (.txt), one song per line: `Artist - Title`, a file name, or a path.
 - **Playlists** (.m3u / .m3u8), including VLC-style `file:///…` entries and playlists made on
   another computer (matched by name).
+- **Traktor playlists** (.nml): right-click a playlist in Traktor → **Export Playlist**, or
+  use your whole `collection.nml` and pick a playlist (terminal: `--from-playlist NAME`).
+  Paths from another computer are fine: songs are matched by artist, title and file name.
 - **Pasted** rows from Excel or Google Sheets, or `Artist - Title` lines.
 
 **If a song exists as both FLAC and MP3** picks which copy to use when you own both.
@@ -148,7 +151,8 @@ dubplate copy  mylist.xlsx /media/usb --number --playlist --prefer mp3
 | `--usb-format aiff\|mp3` | what `--usb` converts to (default `aiff`) |
 | `--rekordbox` | make a [rekordbox stick](#rekordbox-usb-sticks): DEST is the stick, the list becomes a playlist |
 | `--convert aiff\|mp3\|wav\|none` | what `--rekordbox` converts songs older decks can't play to (default `aiff`) |
-| `--name NAME` | playlist (folder) name for `--usb` / `--rekordbox` (default: the list's file name) |
+| `--name NAME` | playlist (folder) name for `--usb` / `--rekordbox` (default: the list's file name, or the Traktor playlist's name) |
+| `--from-playlist NAME` | which playlist of a Traktor `.nml` that has several (e.g. your `collection.nml`; folders as `Gigs / Friday`) |
 | `--recopy` | also copy songs already copied to that destination on an earlier run |
 | `--dry-run` | show what would happen, copy nothing |
 | `--music PATH` | the library (default `~/Music`; on Windows the server's share) |
@@ -159,6 +163,7 @@ Songs it can't find are printed in red and saved next to your list as `<list>-mi
 
 ```
 dubplate copy friday.csv E:\ --rekordbox             # a rekordbox playlist "friday" on the stick
+dubplate copy collection.nml E:\ --rekordbox --from-playlist "Gigs / Friday"   # a Traktor playlist
 dubplate restore-stick E:                             # list the stick's backups
 dubplate restore-stick E: "2026-11-27 21.04.10"       # put one back
 ```
@@ -225,6 +230,16 @@ tempo fitted to the whole song, then the beat grid, key and waveforms. That take
 seconds a song, several songs at a time. The result is remembered, so the next stick with
 that song is quick. A song is analysed again only when its file changes. A file that can't
 be read is left out and listed; the rest of the set still goes on.
+
+**Traktor's beat grids and cue points.** If you use Traktor, songs in your Traktor collection
+get **Traktor's beat grid, BPM, key and cue points** instead of dubplate's analysis (the
+waveforms are still dubplate's). Hot cues 1–8 become A–H; other cues and saved loops become
+memory cues; cue names are kept. dubplate uses `collection.nml` from Traktor's usual folder
+(`Documents/Native Instruments/Traktor …`), or the folder chosen in **⚙ Settings → Traktor**,
+where it can also be switched off. A song is recognised by its file name and size, so the
+library can be at another path for Traktor (`C:\Music\…`, `\\server\…`) than for dubplate.
+Songs Traktor doesn't have are analysed as usual. **Check the cues on your decks:** MP3s in
+particular can be decoded a few milliseconds apart by different programs.
 
 **Backups.** Before anything is written, dubplate keeps a copy of the stick's library (its
 databases, not the music). The page lists them under the stick, each with **Restore…**;
@@ -321,6 +336,8 @@ settings file, and is never shown again after saving.
 - **Also look in:** other folders with songs that should count as your library, such as a
   second drive or the folder your downloader saves to. Songs from them show the folder's
   name in front of their path.
+- **Traktor:** the folder with Traktor's `collection.nml` (automatic when it's in its usual
+  place), or off; see [Rekordbox USB sticks](#rekordbox-usb-sticks).
 - **Soulseek (slskd):** address and API key; see [above](#finding-missing-songs-on-soulseek).
 
 Settings can only be changed on the computer dubplate runs on, not from another device. The

@@ -22,6 +22,7 @@ mod slskd;
 #[cfg(test)]
 mod tests;
 mod text;
+mod traktor;
 mod update;
 
 use clap::{Args, Parser, Subcommand};
@@ -98,8 +99,11 @@ struct ServeArgs {
 
 #[derive(Args)]
 struct FindArgs {
-    /// your list: .csv .tsv .xlsx .txt .m3u
+    /// your list: .csv .tsv .xlsx .txt .m3u, or a Traktor .nml
     list: String,
+    /// which playlist, when the .nml (e.g. your whole Traktor collection) has several
+    #[arg(long, value_name = "NAME")]
+    from_playlist: Option<String>,
     #[arg(long, value_parser = ["flac", "mp3", "any"], default_value = "flac")]
     prefer: String,
     /// don't copy best guesses
@@ -109,8 +113,11 @@ struct FindArgs {
 
 #[derive(Args)]
 struct CopyArgs {
-    /// your list: .csv .tsv .xlsx .txt .m3u
+    /// your list: .csv .tsv .xlsx .txt .m3u, or a Traktor .nml
     list: String,
+    /// which playlist, when the .nml (e.g. your whole Traktor collection) has several
+    #[arg(long, value_name = "NAME")]
+    from_playlist: Option<String>,
     /// folder to copy into (created if needed)
     dest: String,
     /// keep Artist/Album folders
@@ -326,12 +333,12 @@ fn run(cli: Cli) -> i32 {
         Cmd::MatchJson { prefer } => match_json(&resolve_music(cli.music), &prefer),
         Cmd::Find(a) => {
             let music = resolve_music(cli.music);
-            cli_run(&music, &a.list, &a.prefer, a.strict, None)
+            cli_run(&music, &a.list, a.from_playlist.as_deref(), &a.prefer, a.strict, None)
         }
         Cmd::Copy(a) => {
             let music = resolve_music(cli.music);
-            let (list, prefer, strict) = (a.list.clone(), a.prefer.clone(), a.strict);
-            cli_run(&music, &list, &prefer, strict, Some(a))
+            let (list, pl, prefer, strict) = (a.list.clone(), a.from_playlist.clone(), a.prefer.clone(), a.strict);
+            cli_run(&music, &list, pl.as_deref(), &prefer, strict, Some(a))
         }
     }
 }
@@ -412,7 +419,7 @@ fn update_cmd(check: bool, rollback: bool) -> i32 {
     }
 }
 
-fn cli_run(music: &str, list: &str, prefer: &str, strict: bool, copy: Option<CopyArgs>) -> i32 {
+fn cli_run(music: &str, list: &str, from_playlist: Option<&str>, prefer: &str, strict: bool, copy: Option<CopyArgs>) -> i32 {
     let c = colours();
     if !paths::isfile(list) {
         eprintln!("{}Can't find the list file: {list}{}", c.r, c.x);
@@ -455,10 +462,19 @@ fn cli_run(music: &str, list: &str, prefer: &str, strict: bool, copy: Option<Cop
             return 1;
         }
     };
-    let reqs = match lists::read_rows(list, &data) {
+    let reqs = match lists::read_list(list, &data, from_playlist) {
         Ok(r) if !r.is_empty() => r,
         Ok(_) => {
             eprintln!("{}No songs found in {list}{}", c.r, c.x);
+            return 1;
+        }
+        Err(e) if e == traktor::CHOOSE => {
+            eprintln!("{}{list} has several playlists. Choose one with --from-playlist NAME:{}", c.r, c.x);
+            if let Ok(n) = traktor::parse(&lists::decode(&data)) {
+                for (name, k) in traktor::playlists_with_songs(&n) {
+                    eprintln!("  {name}  ({k} song{})", if k == 1 { "" } else { "s" });
+                }
+            }
             return 1;
         }
         Err(e) => {
@@ -642,7 +658,8 @@ fn cli_run(music: &str, list: &str, prefer: &str, strict: bool, copy: Option<Cop
 
     let dest = if a.rekordbox { rekordbox::stick_path(&a.dest) } else { paths::abspath(&paths::expanduser(&a.dest)) };
     if a.rekordbox {
-        let stem = paths::splitext(paths::basename(list)).0.to_string();
+        // the Traktor playlist's own name (without its folders), else the list's file name
+        let stem = from_playlist.map_or_else(|| paths::splitext(paths::basename(list)).0.to_string(), |p| p.rsplit(" / ").next().unwrap_or(p).to_string());
         let name = a.name.clone().unwrap_or(stem);
         let songs: Vec<rekordbox::Song> = to_copy
             .iter()
@@ -681,6 +698,9 @@ fn cli_run(music: &str, list: &str, prefer: &str, strict: bool, copy: Option<Cop
                     "{}{}Done: {} songs in the playlist {}{}{} ({} copied, {} already on the stick, {} converted){}",
                     c.g, c.b, r.tracks, r.playlist, c.x, c.g, r.copied, r.reused, r.converted, c.x
                 );
+                if r.traktor > 0 {
+                    println!("{}{} with Traktor's beat grid, key and cue points.{}", c.d, r.traktor, c.x);
+                }
                 if let Some(b) = &r.backup {
                     println!("{}The stick's library from before is backed up ({b}); `dubplate restore-stick` puts it back.{}", c.d, c.x);
                 }
@@ -708,7 +728,7 @@ fn cli_run(music: &str, list: &str, prefer: &str, strict: bool, copy: Option<Cop
     let usb_format = a.usb.then(|| a.usb_format.clone());
     // a USB stick remembers per playlist folder; a folder remembers itself
     let usb_target = usb_format.as_ref().map(|_| {
-        let stem = paths::splitext(paths::basename(list)).0.to_string();
+        let stem = from_playlist.map_or_else(|| paths::splitext(paths::basename(list)).0.to_string(), |p| p.rsplit(" / ").next().unwrap_or(p).to_string());
         copy::usb_folder(&dest, a.name.as_deref().unwrap_or(&stem))
     });
     if !a.recopy {

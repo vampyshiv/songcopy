@@ -803,7 +803,16 @@ fn post(ctx: &Ctx, path: &str, b: &Value) -> (Value, bool) {
                 let f = Some(s(b, "filename"))
                     .filter(|f| !f.is_empty())
                     .unwrap_or("list.csv");
-                lists::read_rows(f, &decode_b64(s(b, "data")))
+                let data = decode_b64(s(b, "data"));
+                let pl = Some(s(b, "playlist")).filter(|p| !p.is_empty());
+                let r = lists::read_list(f, &data, pl);
+                if matches!(&r, Err(e) if e == crate::traktor::CHOOSE) {
+                    // a Traktor file with several playlists: the page asks which
+                    let n = crate::traktor::parse(&lists::decode(&data)).unwrap_or_default();
+                    let pls = crate::traktor::playlists_with_songs(&n);
+                    return (json!({"choose": pls.iter().map(|(name, k)| json!({"name": name, "songs": k})).collect::<Vec<_>>()}), false);
+                }
+                r
             };
             match reqs {
                 Err(e) => json!({"error": format!("Couldn't read that file: {e}")}),
@@ -944,11 +953,31 @@ fn settings_view(ctx: &Ctx) -> Value {
         "music_from_cli": ctx.music_from_cli,
         "extra_folders": discover::setting_list("extra_folders").iter()
             .map(|f| json!({"path": f, "exists": paths::isdir(f)})).collect::<Vec<_>>(),
+        "traktor": traktor_view(),
         "slskd": {
             "url": discover::setting_str("slskd_url").unwrap_or_else(|| slskd::DEFAULT_URL.into()),
             "key_set": discover::setting_str("slskd_key").is_some(), // the key itself never leaves
         },
     })
+}
+
+/// the Traktor collection in use, for the Settings panel
+fn traktor_view() -> Value {
+    let set = discover::setting_str("traktor_folder");
+    let off = set.as_deref() == Some("off");
+    let mut v = json!({"off": off, "folder": set.filter(|s| s != "off")});
+    match crate::traktor::collection_file() {
+        Err(e) => v["error"] = Value::from(e),
+        Ok(None) => {}
+        Ok(Some(f)) => match crate::traktor::Collection::load(&f) {
+            Ok(c) => {
+                v["file"] = Value::from(f);
+                v["songs"] = Value::from(c.len());
+            }
+            Err(e) => v["error"] = Value::from(e),
+        },
+    }
+    v
 }
 
 /// Apply what the Settings panel sent. Everything is checked first, so a mistake in one field
@@ -990,6 +1019,19 @@ fn save_settings(lib: &Arc<Library>, b: &Value) -> Result<(), String> {
             Some(folders)
         }
     };
+    let traktor = match b.get("traktor_folder").and_then(Value::as_str).map(str::trim) {
+        None => None,
+        Some("") => Some(None), // automatic
+        Some("off") => Some(Some("off".to_string())),
+        Some(f) => {
+            let f = paths::abspath(&paths::expanduser(f));
+            let file = if f.to_lowercase().ends_with(".nml") { f.clone() } else { join(&f, "collection.nml") };
+            if !paths::isfile(&file) {
+                return Err(format!("There's no collection.nml in {f}. Choose the Traktor folder that has it."));
+            }
+            Some(Some(f))
+        }
+    };
     let url = match b.get("slskd_url").and_then(Value::as_str).map(str::trim) {
         None => None,
         Some("") => Some(None), // back to the default
@@ -1022,6 +1064,11 @@ fn save_settings(lib: &Arc<Library>, b: &Value) -> Result<(), String> {
             lib.set_extra(&folders);
             rescan = true;
         }
+    }
+    match traktor {
+        Some(Some(f)) => discover::save_setting("traktor_folder", Value::from(f)),
+        Some(None) => discover::remove_setting("traktor_folder"),
+        None => {}
     }
     match url {
         Some(Some(u)) => discover::save_setting("slskd_url", Value::from(u)),

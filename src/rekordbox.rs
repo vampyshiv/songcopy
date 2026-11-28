@@ -217,11 +217,13 @@ fn analyse_file(path: &Path) -> Result<(rbl_analysis::Analysis, rbl_anlz::Rekord
     Ok((analysis, waves, duration))
 }
 
-/// where the analysis of this exact file (path, size, date) is kept
-fn cache_key(path: &str) -> Option<String> {
+/// where the analysis of this exact file (path, size, date) is kept; `grid` is the Traktor beat
+/// grid it was made with, if any (another grid is another analysis)
+fn cache_key(path: &str, grid: &str) -> Option<String> {
     let m = std::fs::metadata(path).ok()?;
     let mtime = m.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos();
-    let h = sha1_smol::Sha1::from(format!("{CACHE_VERSION}\n{path}\n{}\n{mtime}", m.len())).digest().to_string();
+    let grid = if grid.is_empty() { String::new() } else { format!("\ntraktor {grid}") };
+    let h = sha1_smol::Sha1::from(format!("{CACHE_VERSION}\n{path}\n{}\n{mtime}{grid}", m.len())).digest().to_string();
     Some(join(&join(&paths::app_dir(), "analysis"), &h[..2]).to_string() + &format!("{}{}", paths::SEP, &h[2..]))
 }
 
@@ -342,10 +344,29 @@ fn decoded_copy(src: &str) -> Result<String, String> {
 
 /// what goes on the stick for one song: its details and its analysis files. Analysed once,
 /// then taken from dubplate's saved analysis until the file changes.
-pub fn prepare(song: &Song) -> Result<SourceTrack, String> {
-    let key = cache_key(&song.path);
+/// Traktor's BPM, key and cue points for a song (its beat grid goes into the analysis itself)
+fn with_traktor(mut t: SourceTrack, tk: Option<&crate::traktor::Entry>) -> SourceTrack {
+    if let Some(e) = tk {
+        if let (Some(bpm), Some(_)) = (e.bpm, e.grid_ms) {
+            t.bpm_x100 = (bpm * 100.0).round() as u32;
+        }
+        if let Some(k) = &e.key {
+            t.key = k.clone();
+        }
+        let cues = crate::traktor::cues(e);
+        if !cues.is_empty() {
+            t.cues = Some(cues);
+        }
+    }
+    t
+}
+
+pub fn prepare(song: &Song, tk: Option<&crate::traktor::Entry>) -> Result<SourceTrack, String> {
+    // Traktor's beat grid, when the collection has one for this song
+    let grid = tk.and_then(|e| Some((e.bpm?, e.grid_ms?)));
+    let key = cache_key(&song.path, &grid.map(|(b, a)| format!("{b} {a}")).unwrap_or_default());
     if let Some(t) = key.as_deref().and_then(load_cached) {
-        return Ok(t);
+        return Ok(with_traktor(t, tk));
     }
     let mut tags = read_tags(&song.path);
     // a format the analyser can't decode (Opus, WMA, DSD, …) goes on the stick from a FLAC copy
@@ -380,12 +401,15 @@ pub fn prepare(song: &Song) -> Result<SourceTrack, String> {
         }
     };
     let path = Path::new(&source);
-    let beats: Vec<rbl_anlz::Beat> = analysis
-        .tempo
-        .beats
-        .iter()
-        .map(|b| rbl_anlz::Beat { beat_number: b.beat_number, tempo_x100: b.tempo_x100, time_ms: b.time_ms })
-        .collect();
+    let beats: Vec<rbl_anlz::Beat> = match grid {
+        Some((bpm, anchor)) => crate::traktor::beats(bpm, anchor, duration * 1000.0),
+        None => analysis
+            .tempo
+            .beats
+            .iter()
+            .map(|b| rbl_anlz::Beat { beat_number: b.beat_number, tempo_x100: b.tempo_x100, time_ms: b.time_ms })
+            .collect(),
+    };
     let files = rbl_anlz::author_with_rekordbox_waves(
         "/pending", // rbl-export fills in the real path on the stick
         &beats,
@@ -421,7 +445,7 @@ pub fn prepare(song: &Song) -> Result<SourceTrack, String> {
     if let Some(k) = key {
         save_cached(&k, &t);
     }
-    Ok(t)
+    Ok(with_traktor(t, tk))
 }
 
 /// how far an export has got, for the page / terminal
@@ -445,6 +469,8 @@ pub struct Report {
     pub backup: Option<String>,
     pub errors: Vec<(String, String)>,
     pub warnings: Vec<String>,
+    /// songs that got Traktor's beat grid / cue points
+    pub traktor: usize,
 }
 
 /// the playlist's id in the stick's record of where it came from: the same name each time, so
@@ -568,6 +594,19 @@ pub fn export_set(
     let songs: Vec<&Song> = songs.iter().filter(|s| seen.insert(paths::normcase(&s.path))).collect();
     // analyse (or take the saved analysis), a few songs at a time
     let total = songs.len();
+    // the Traktor collection (Settings): its beat grids, keys and cue points go on the stick
+    let mut warnings_before: Vec<String> = Vec::new();
+    let collection = match crate::traktor::collection() {
+        Ok(c) => c,
+        Err(e) => {
+            warnings_before.push(format!("Traktor's beat grids and cue points weren't used: {e}"));
+            None
+        }
+    };
+    let tk: Vec<Option<&crate::traktor::Entry>> = songs
+        .iter()
+        .map(|s| collection.as_ref().and_then(|c| c.find(&s.path, std::fs::metadata(&s.path).map(|m| m.len()).unwrap_or(0))))
+        .collect();
     let next = std::sync::atomic::AtomicUsize::new(0);
     // the results, and how many are in (counted under the same lock so progress never steps back)
     type Results = (Vec<Option<Result<SourceTrack, String>>>, usize);
@@ -582,7 +621,7 @@ pub fn export_set(
                     break;
                 }
                 // a file that trips up the decoder leaves out that song, not the whole set
-                let r = std::panic::catch_unwind(|| prepare(songs[i]))
+                let r = std::panic::catch_unwind(|| prepare(songs[i], tk[i]))
                     .unwrap_or_else(|_| Err("dubplate couldn't analyse this file (it may be damaged)".into()));
                 let mut g = results.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 g.0[i] = Some(r);
@@ -593,9 +632,13 @@ pub fn export_set(
     });
     let mut tracks = Vec::new();
     let mut errors = Vec::new();
-    for (song, r) in songs.iter().zip(results.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner).0) {
+    let mut with_traktor = 0;
+    for ((song, r), tk) in songs.iter().zip(results.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner).0).zip(&tk) {
         match r {
-            Some(Ok(t)) => tracks.push(t),
+            Some(Ok(t)) => {
+                with_traktor += usize::from(tk.is_some());
+                tracks.push(t);
+            }
             Some(Err(e)) => errors.push((song.path.clone(), e)),
             None => errors.push((song.path.clone(), "not analysed".into())),
         }
@@ -700,8 +743,10 @@ pub fn export_set(
         verified: report.verified,
         backup,
         errors: errors.into_iter().chain(left_out).collect(),
-        warnings: too_fine
+        traktor: with_traktor,
+        warnings: warnings_before
             .into_iter()
+            .chain(too_fine)
             .chain(report.warnings.iter()
             .map(|w| {
                 let why = match w.reason.as_str() {
@@ -1456,7 +1501,7 @@ mod tests {
         let v = rbl_export::verify(&stick).unwrap();
         assert!(v.is_ok() && v.tracks == 2 && v.playlists == 1 && v.analysis_present == 2, "{v:?}");
         // the analysis found the tempo
-        let t = prepare(&songs[1]).unwrap();
+        let t = prepare(&songs[1], None).unwrap();
         assert!((t.bpm_x100 as i32 - 12800).abs() <= 100, "bpm {}", t.bpm_x100);
         // a second set goes next to the first; the stick is backed up first
         let r2 = export_set(&st, "Saturday", &songs[..1], None, &[], &|_| {}).unwrap();

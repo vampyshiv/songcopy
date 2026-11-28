@@ -2,6 +2,20 @@
 
 Each version's notes are shown in dubplate's update card before you install it.
 
+## 1.0.0-alpha.3
+
+**Test build.** Traktor comes to dubplate.
+
+- **Traktor playlists as song lists.** Drop a playlist exported from Traktor (.nml), or your
+  whole `collection.nml` and pick a playlist. Terminal: `--from-playlist NAME`.
+- **Rekordbox sticks get Traktor's beat grid, BPM, key and cue points** for songs in your
+  Traktor collection: hot cues 1–8 become A–H, other cues and loops memory cues, names kept.
+  The collection is found in Traktor's usual folder, or chosen in **⚙ Settings → Traktor**.
+  Check the cues on your decks before a gig.
+- **Folders added under Settings → Also look in are really saved** (before, Save said
+  "Nothing changed." and kept only the slskd key).
+- **A yellow best guess that's wrong** has its own **🔎 Find on Soulseek** link.
+
 ## 1.0.0-alpha.2
 
 **Test build.** Fixes found by a full bug check, and Soulseek downloads are found again.

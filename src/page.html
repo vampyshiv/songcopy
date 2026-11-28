@@ -100,7 +100,7 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
 
 <details class="help" id="help"><summary>How dubplate works</summary>
 <h3>1. Give it a list</h3>
-<p>Drop a spreadsheet (.csv, .xlsx), a text file with one song per line ("Artist - Title"), or a playlist (.m3u). You can also paste rows straight from Excel or Google Sheets. A Spotify export (e.g. from Exportify) works as it is.</p>
+<p>Drop a spreadsheet (.csv, .xlsx), a text file with one song per line ("Artist - Title"), or a playlist (.m3u). From <b>Traktor</b>: right-click a playlist → <b>Export Playlist</b> and drop the .nml, or drop your whole <code>collection.nml</code> and pick a playlist. You can also paste rows straight from Excel or Google Sheets. A Spotify export (e.g. from Exportify) works as it is.</p>
 <h3>2. Check what it found</h3>
 <ul>
 <li><span class="legend" style="background:var(--ok)"></span><b>Found</b>: the exact song.</li>
@@ -118,7 +118,7 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
 <h3>Finding missing songs on Soulseek</h3>
 <p>If you use <a href="https://github.com/slskd/slskd" target="_blank" rel="noopener">slskd</a> (a Soulseek client), connect it in <b>⚙ Settings</b>. Then <b>🔎 Find on Soulseek</b> looks for the red and purple songs (a yellow best guess that's wrong has its own <b>🔎 Find on Soulseek</b> link). dubplate picks the best file for each (the right version, good quality, someone who can send it soon) and shows it under the song, with other choices in a menu. Untick or change any, then click <b>Download</b>. When the downloads finish, dubplate reads your library again and they turn green, ready to copy. Add slskd's download folder under <b>Also look in</b> so they're found.</p>
 <h3>Settings</h3>
-<p><b>⚙ Settings</b> (top of the page): your main music folder, other folders to also look in (a second drive, a downloads folder), and the Soulseek connection. Settings can only be changed on the computer dubplate runs on.</p>
+<p><b>⚙ Settings</b> (top of the page): your main music folder, other folders to also look in (a second drive, a downloads folder), your Traktor collection (for beat grids and cue points on rekordbox sticks), and the Soulseek connection. Settings can only be changed on the computer dubplate runs on.</p>
 <h3>It remembers what it copied</h3>
 <p>Each destination has its own memory. Songs already copied to that folder (or that stick) are hidden, so after you've added missing songs to your library you can load the same list again and only the new ones are copied. A song you copied to your DJ folder still shows up for the USB, because the stick has its own memory. Click <b>✓ already copied</b> to see them, and tick one to copy it again.</p>
 <h3>It never changes your library</h3>
@@ -137,6 +137,13 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
   <div class="row"><button id="addextra">+ Add a folder…</button><button id="addslskdfolder" class="hidden"></button></div>
   <div class="browser" id="br_extra"></div>
   <p class="small" id="slskdfolderinfo"></p>
+  <h3 class="sethead">Traktor</h3>
+  <p class="small" style="margin-top:-4px">Rekordbox sticks get <b>Traktor's beat grid, BPM, key and cue points</b> for songs that are in your Traktor collection (hot cues 1–8 become A–H, other cues and loops memory cues). Songs Traktor doesn't know are analysed by dubplate.</p>
+  <label class="fieldlabel" for="set_traktor">Traktor folder<button type="button" class="tip" data-tip="The folder with Traktor's collection.nml: usually Documents\Native Instruments\Traktor 3.x.x (or 4.x). Leave it empty to use the one in its usual place on this computer. If Traktor is on another computer, point this at a copy of its collection.nml.">?</button></label>
+  <div class="row"><input type="text" id="set_traktor" spellcheck="false" placeholder="automatic"><button data-browse="set_traktor">Browse…</button></div>
+  <div class="browser" id="br_set_traktor"></div>
+  <label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="traktor_off"> Don't use Traktor (dubplate analyses every song itself)</label>
+  <p class="small" id="traktorinfo" style="margin:4px 0 0"></p>
   <h3 class="sethead">Soulseek (slskd)</h3>
   <p class="small" style="margin-top:-4px">Connect your own <a href="https://github.com/slskd/slskd" target="_blank" rel="noopener">slskd</a> to look for missing songs on Soulseek. dubplate searches and shows you what it found; nothing downloads until you confirm.</p>
   <label class="fieldlabel" for="set_url">slskd address<button type="button" class="tip" data-tip="The address you open slskd's web page with, e.g. http://localhost:5030 when it runs on this computer, or http://myserver:5030.">?</button></label>
@@ -171,8 +178,8 @@ It only copies, so nothing in your library is moved or deleted. <span id="libinf
 <section class="card">
   <div class="step"><b>1</b><h2>Your song list</h2></div>
   <div class="drop" id="drop"><strong>Drop a file here</strong> or click to choose<br>
-  <span class="small">Spreadsheet (.csv, .xlsx), text file (one song per line), or playlist (.m3u)</span></div>
-  <input type="file" id="file" class="hidden" accept=".csv,.tsv,.txt,.xlsx,.m3u,.m3u8">
+  <span class="small">Spreadsheet (.csv, .xlsx), text file (one song per line), playlist (.m3u), or Traktor playlist (.nml)</span></div>
+  <input type="file" id="file" class="hidden" accept=".csv,.tsv,.txt,.xlsx,.m3u,.m3u8,.nml">
   <details style="margin-top:10px"><summary class="small" style="cursor:pointer">…or paste a list <button type="button" class="tip" data-tip="One song per line, like “Robyn - Dancing On My Own”. You can also paste rows copied from Excel or Google Sheets: a first row with column names (Artist, Title, Album…) helps, in any order.">?</button></summary>
   <textarea id="paste" placeholder="Depeche Mode - World in My Eyes&#10;Robyn - Dancing On My Own&#10;Sigur Rós - Rembihnútur"></textarea>
   <div class="row" style="margin-top:8px"><button id="pastego">Find these songs</button></div></details>
@@ -333,6 +340,10 @@ function loadFile(f){LISTNAME=f.name.replace(/\.[^.]+$/,'');$('#usb_name').value
 async function match(req,keep){window.LAST=req;$('#loaderr').textContent='';drop.innerHTML='<strong>Looking for your songs…</strong>'+($('#libinfo').textContent.includes('first time')?'<br><span class="small">(waiting for the library to finish reading - only slow the very first time)</span>':'');
  const res=await api('/api/match',{...req,prefer:$('#prefer').value});
  drop.innerHTML=`<strong>${esc(LISTNAME)}</strong> loaded. Drop another file to replace it.`;
+ if(res.choose){ // a Traktor file with several playlists: which one?
+  $('#loaderr').innerHTML=`<span style="color:var(--ink)">That Traktor file has ${res.choose.length} playlists. Which one? </span><select id="nmlpick"><option value="">Choose a playlist…</option>`+
+   res.choose.map((p,k)=>`<option value="${k}">${esc(p.name)} (${p.songs} song${p.songs===1?'':'s'})</option>`).join('')+'</select>';
+  $('#nmlpick').onchange=e=>{const p=res.choose[+e.target.value];if(!p)return;LISTNAME=p.name.split(' / ').pop();$('#usb_name').value=$('#rb_name').value=LISTNAME;match({...req,playlist:p.name},keep)};return}
  if(res.error){$('#loaderr').textContent=res.error;return}
  if(!keep&&req!==window.PREV)for(const k in SOUL)delete SOUL[k];window.PREV=req;
  RESULTS=res.results.map(r=>({...r,checked:r.status==='found'||r.status==='guess'}));FILTER=RESULTS.some(r=>r.status==='missing')?null:null;render();
@@ -434,6 +445,7 @@ async function makeRekordbox(stick){
   const r=j.report;
   let h=`<div class="banner ${r.errors.length?'bad':'ok'}"><b>Done.</b> The playlist <b>${esc(r.playlist)}</b> on <b>${esc(stick)}</b> has ${r.tracks} song${r.tracks===1?'':'s'}`+
    ` (${r.copied} copied${r.converted?`, ${r.converted} of them converted for older decks`:''}${r.reused?`, ${r.reused} already on the stick`:''}).`+
+   (r.traktor?`<br><span class="small">${r.traktor} with Traktor's beat grid, key and cue points.</span>`:'')+
    (r.verified?'':'<br><span class="small">The stick couldn\'t be checked after writing - try it on a deck before the gig.</span>')+
    (r.backup?`<br><span class="small">The stick's library from before is backed up (${esc(r.backup)}); you can restore it below.</span>`:'')+
    `<br><span class="small">On the deck: plug the stick in, choose it as the source, and find the set under <b>PLAYLIST</b>. Eject it properly before unplugging.</span></div>`;
@@ -533,11 +545,15 @@ function drawExtras(){$('#extras').innerHTML=EXTRAS.length?EXTRAS.map((f,k)=>`<d
  $('#addslskdfolder').classList.toggle('hidden',!dl||has);if(dl)$('#addslskdfolder').textContent='+ Add slskd’s download folder';
  $('#slskdfolderinfo').textContent=SLSKD&&SLSKD.downloads&&!SLSKD.downloads_here?`slskd saves downloads to “${SLSKD.downloads}”, which isn't a folder on this computer (slskd probably runs in Docker, where folders have other names). Use “+ Add a folder…” to pick the same folder as this computer sees it.`:(dl&&!has?`slskd saves downloads to ${dl}. Add it so songs you download are found.`:'')}
 async function openSettings(msg){SET=await api('/api/settings');$('#setcard').classList.remove('hidden');$('#set_music').value=SET.music;EXTRAS=SET.extra_folders.map(f=>({...f}));
- $('#set_url').value=SET.slskd.url;$('#set_key').value='';keyState();
+ $('#set_url').value=SET.slskd.url;traktorView();$('#set_key').value='';keyState();
  $('#set_music').disabled=$('[data-browse=set_music]').disabled=!!SET.music_from_cli;
  $('#musicnote').textContent=SET.music_from_cli?'dubplate was started with --music, so that folder is used. Start it without --music to choose here.':'';
  $('#setmsg').textContent=window.INFO&&INFO.here===false?AWAY:(msg||'');$('#slskdstatus').textContent='';drawExtras();$('#setcard').scrollIntoView({behavior:'smooth'});if(SET.slskd.key_set)testSlskd(true)}
 $('#opensettings').onclick=e=>{e.preventDefault();openSettings()};$('#setclose').onclick=()=>$('#setcard').classList.add('hidden');
+function traktorView(){const T=SET.traktor||{};$('#traktor_off').checked=!!T.off;$('#set_traktor').value=T.off?'':(T.folder||'');$('#set_traktor').disabled=$('[data-browse=set_traktor]').disabled=!!T.off;
+ $('#traktorinfo').innerHTML=T.off?'Not used.':T.error?`<span style="color:var(--bad)">${esc(T.error)}</span>`:T.file?`<span style="color:var(--ok)">✓ ${T.songs.toLocaleString()} songs</span> in ${esc(T.file)}${T.folder?'':' (found automatically)'}`:'No Traktor collection found on this computer. Choose its folder if you use Traktor.'}
+$('#traktor_off').onchange=e=>{$('#set_traktor').disabled=$('[data-browse=set_traktor]').disabled=e.target.checked};
+document.querySelector('[data-browse=set_traktor]').onclick=()=>pick($('#br_set_traktor'),$('#set_traktor').value||'~','Use this folder',f=>$('#set_traktor').value=f);
 document.querySelector('[data-browse=set_music]').onclick=()=>pick($('#br_set_music'),$('#set_music').value||'~','Use this folder',f=>$('#set_music').value=f);
 $('#addextra').onclick=()=>pick($('#br_extra'),'~','Add this folder',f=>{if(!EXTRAS.some(x=>x.path===f))EXTRAS.push({path:f,exists:true});drawExtras()});
 $('#addslskdfolder').onclick=()=>{EXTRAS.push({path:SLSKD.downloads_here,exists:true});drawExtras()};
@@ -559,10 +575,11 @@ $('#setsave').onclick=async()=>{$('#setmsg').textContent='Saving…';const body=
  const m=$('#set_music').value.trim();if(m!==SET.music)body.music=m;
  const ex=EXTRAS.map(f=>f.path);if(JSON.stringify(ex)!==JSON.stringify(SET.extra_folders.map(f=>f.path)))body.extra_folders=ex;
  const u=$('#set_url').value.trim();if(u!==SET.slskd.url)body.slskd_url=u;
+ const tf=$('#traktor_off').checked?'off':$('#set_traktor').value.trim(),T=SET.traktor||{};if(tf!==(T.off?'off':(T.folder||'')))body.traktor_folder=tf;
  const k=$('#set_key').value.trim();if(k)body.slskd_key=k;
  if(!Object.keys(body).length){$('#setmsg').textContent='Nothing changed.';return}
  const r=await api('/api/settings',body);if(r.error){$('#setmsg').innerHTML=`<span style="color:var(--bad)">${esc(r.error)}</span>`;return}
- SET=r;EXTRAS=r.extra_folders.map(f=>({...f}));drawExtras();$('#set_key').value='';keyState();
+ SET=r;EXTRAS=r.extra_folders.map(f=>({...f}));drawExtras();traktorView();$('#set_key').value='';keyState();
  $('#setmsg').innerHTML='<span style="color:var(--ok)">✓ Saved.</span> Reading the library again…';await info();if(RESULTS.length)render();
  const done=async()=>{const i=await api('/api/info');if(i.scanning)return setTimeout(done,1000);info();
   $('#setmsg').innerHTML=`<span style="color:var(--ok)">✓ Saved.</span> ${i.count.toLocaleString()} songs in your library folders.`+(window.LAST?' <a href="#" id="rematch">Look for your list again</a>':'');

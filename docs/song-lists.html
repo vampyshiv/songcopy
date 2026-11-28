@@ -51,13 +51,16 @@
 <tr><td>Spreadsheet</td><td><code>.xlsx</code> <code>.csv</code> <code>.tsv</code></td><td>A header row with <strong>Artist</strong> and <strong>Title</strong> (or Song, Track, Name). <strong>Album</strong> and <strong>File</strong> (or Path) help if you have them. Any order.</td></tr>
 <tr><td>Text file</td><td><code>.txt</code></td><td>One song per line: <code>Artist - Title</code>, a file name, or a file's path.</td></tr>
 <tr><td>Playlist</td><td><code>.m3u</code> <code>.m3u8</code></td><td>Any playlist, including ones made on another computer: dubplate matches by name, not by the old path.</td></tr>
+<tr><td>Traktor playlist</td><td><code>.nml</code></td><td>A playlist exported from Traktor, or your whole <code>collection.nml</code> (dubplate asks which playlist). Paths from another computer are fine.</td></tr>
 <tr><td>Pasted</td><td>(none)</td><td>Rows copied from Excel or Google Sheets, or typed <code>Artist - Title</code> lines.</td></tr>
 </tbody></table></div>
 
 <h2 id="getting-a-list-out-of-other-apps">Getting a list out of other apps</h2>
 <h3>Spotify</h3>
 <p>Use a free exporter such as <a href="https://exportify.net">Exportify</a>: sign in, export the playlist as a CSV and drop that file on dubplate. Its columns work as they are.</p>
-<h3>Traktor, rekordbox, Serato, VirtualDJ, Engine</h3>
+<h3>Traktor</h3>
+<p>Right-click the playlist → <strong>Export Playlist</strong> and drop the <code>.nml</code> file on dubplate. Or drop your whole <code>collection.nml</code> (in <code>Documents\Native Instruments\Traktor …</code>) and choose the playlist from the menu that appears. In the terminal: <code>dubplate copy collection.nml E:\ --rekordbox --from-playlist "Friday"</code>.</p>
+<h3>rekordbox, Serato, VirtualDJ, Engine</h3>
 <p>Export or save the playlist as an <strong>M3U / M3U8</strong> playlist file (most DJ software offers this on a playlist's right-click menu) and drop it on dubplate. This is handy for moving a set from one computer to another.</p>
 <h3>A set written down anywhere else</h3>
 <p>Type or paste it, one song per line, as <code>Artist - Title</code>. Tracklists from a mix's description or a forum post usually paste straight in.</p>

@@ -1,4 +1,5 @@
-//! Reading the song list: spreadsheets (.csv/.tsv/.xlsx), pasted rows, text files, .m3u playlists.
+//! Reading the song list: spreadsheets (.csv/.tsv/.xlsx), pasted rows, text files, .m3u playlists,
+//! Traktor .nml playlists.
 
 use crate::library::Request;
 use crate::paths::{basename, splitext};
@@ -56,6 +57,21 @@ const HEAD: &[(&str, &[&str])] = &[
 static HEADER_SPLIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[,;\t]").unwrap());
 
 pub fn read_rows(filename: &str, data: &[u8]) -> Result<Vec<Request>, String> {
+    read_list(filename, data, None)
+}
+
+/// is this a Traktor file (a collection, or a playlist exported from Traktor)?
+pub fn is_nml(filename: &str, data: &[u8]) -> bool {
+    splitext(&filename.to_lowercase()).1 == ".nml"
+        || decode(&data[..data.len().min(512)]).contains("<NML ")
+}
+
+/// read a song list; `playlist` picks one from a Traktor file that has several
+/// (traktor::CHOOSE when one has to be picked)
+pub fn read_list(filename: &str, data: &[u8], playlist: Option<&str>) -> Result<Vec<Request>, String> {
+    if is_nml(filename, data) {
+        return crate::traktor::playlist_rows(&crate::traktor::parse(&decode(data))?, playlist);
+    }
     let ext = splitext(&filename.to_lowercase()).1.to_string();
     let table = match ext.as_str() {
         ".xlsx" | ".xlsm" => read_xlsx(data)?,
