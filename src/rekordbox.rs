@@ -86,7 +86,7 @@ fn codec_gap(err: &str) -> bool {
         "no suitable format reader",
         "malformed",
     ];
-    let unsupported = err.contains("unsupported feature") || err.contains("no audio track") || err.contains("the file has no audio in it");
+    let unsupported = err.contains("unsupported feature") || err.contains("no audio track");
     unsupported && !DAMAGED.iter().any(|d| err.contains(d))
 }
 
@@ -231,8 +231,9 @@ fn load_cached(base: &str) -> Option<SourceTrack> {
         return None; // a decoded copy (see `decoded_copy`) that has been cleared away
     }
     if t.source_path.starts_with(decoded_base()) {
-        // handed out under the lock, so it can't be cleared away between the look and the mark
-        let _lock = decoded_lock();
+        // handed out under the lock, so it can't be cleared away between the look and the mark;
+        // without the lock it isn't handed out (the song is analysed afresh)
+        let _lock = decoded_lock()?;
         if !t.source_path.is_file() {
             return None;
         }
@@ -271,6 +272,11 @@ fn decoded_base() -> std::path::PathBuf {
 /// the decoded copies' lock, held while it's in scope; None if another dubplate keeps it for
 /// over a minute (it's only ever held for quick looks and deletions)
 fn decoded_lock() -> Option<std::fs::File> {
+    // after a wait that timed out, don't wait again for five minutes: fail fast
+    static GAVE_UP: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+    if GAVE_UP.lock().ok().and_then(|g| *g).is_some_and(|t| t.elapsed().as_secs() < 300) {
+        return None;
+    }
     let base = decoded_base();
     std::fs::create_dir_all(&base).ok()?;
     let f = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(base.join(".lock")).ok()?;
@@ -280,6 +286,12 @@ fn decoded_lock() -> Option<std::fs::File> {
             Ok(()) => return Some(f),
             Err(std::fs::TryLockError::WouldBlock) if std::time::Instant::now() < until => {
                 std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(std::fs::TryLockError::WouldBlock) => {
+                if let Ok(mut g) = GAVE_UP.lock() {
+                    *g = Some(std::time::Instant::now());
+                }
+                return None;
             }
             Err(_) => return None,
         }
@@ -333,33 +345,67 @@ fn sweep_all_decoded() {
 }
 
 fn sweep_decoded_now() {
-    for song in std::fs::read_dir(decoded_base()).into_iter().flatten().flatten() {
-        if !song.file_type().is_ok_and(|t| t.is_dir()) {
-            continue;
+    // one sweep at a time in this dubplate (exports can start while one runs)
+    static RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if RUNNING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    struct Done;
+    impl Drop for Done {
+        fn drop(&mut self) {
+            RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
         }
-        let source = std::fs::read_to_string(song.path().join("source")).ok();
-        let current = source.as_deref().and_then(|src| version_of(src).ok()); // (no lock held)
+    }
+    let _done = Done;
+    let Ok(rd) = std::fs::read_dir(decoded_base()) else { return };
+    let mut songs: Vec<std::path::PathBuf> = rd.flatten().filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).map(|e| e.path()).collect();
+    // start somewhere different each time, so a sweep cut short (a terminal export ending, a
+    // song on a share that's slow) still gets to every song over a few runs
+    if !songs.is_empty() {
+        let start = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos() as usize) % songs.len();
+        songs.rotate_left(start);
+    }
+    for song in songs {
+        let source = std::fs::read_to_string(song.join("source")).ok();
+        // (no lock held while looking at the song: it may be on a share that's slow or away)
+        let current = match source.as_deref().map(version_of) {
+            Some(Ok(v)) => Some(v),
+            Some(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => None, // the song is gone
+            Some(Err(_)) => continue, // can't tell right now (a share that's away): leave it
+            None => None,
+        };
         let Some(_lock) = decoded_lock() else { return };
+        // every version listed, or the song is left alone this time
+        let Ok(rd) = std::fs::read_dir(&song) else { continue };
+        let Ok(entries) = rd.collect::<Result<Vec<_>, _>>() else { continue };
         let mut left = 0;
-        for v in std::fs::read_dir(song.path()).into_iter().flatten().flatten() {
-            if !v.file_type().is_ok_and(|t| t.is_dir()) {
-                continue;
-            }
-            for f in std::fs::read_dir(v.path()).into_iter().flatten().flatten() {
-                if f.file_name().to_string_lossy().starts_with(".decoding-") && age_secs(&f.path()) > 600 {
-                    let _ = std::fs::remove_file(f.path());
+        let mut unsure = false;
+        for v in entries {
+            match v.file_type() {
+                Ok(t) if t.is_dir() => {}
+                Ok(_) => continue,
+                Err(_) => {
+                    unsure = true;
+                    continue;
                 }
             }
-            let is_current = current.as_deref() == Some(&*v.file_name().to_string_lossy());
-            if !is_current && last_use(&v.path()) > 86400 {
+            // judged before any tidying below changes the folder's date
+            let stale = current.as_deref() != Some(&*v.file_name().to_string_lossy()) && last_use(&v.path()) > 86400;
+            if stale {
                 let _ = std::fs::remove_dir_all(v.path());
+            } else {
+                for f in std::fs::read_dir(v.path()).into_iter().flatten().flatten() {
+                    if f.file_name().to_string_lossy().starts_with(".decoding-") && age_secs(&f.path()) > 600 {
+                        let _ = std::fs::remove_file(f.path());
+                    }
+                }
             }
             if v.path().exists() {
                 left += 1;
             }
         }
-        if left == 0 {
-            let _ = std::fs::remove_dir_all(song.path());
+        if left == 0 && !unsure {
+            let _ = std::fs::remove_dir_all(&song);
         }
     }
 }
@@ -378,7 +424,10 @@ fn only_a_mark(dir: &Path) -> bool {
 
 /// take back a copy that turned out unusable (the decode failed, or its audio can't be read)
 fn discard_decoded(copy: &Path) {
-    let Some(_lock) = decoded_lock() else { return };
+    let Some(_lock) = decoded_lock() else {
+        let _ = std::fs::remove_file(copy); // ours to take back; the folders wait for the lock
+        return;
+    };
     let _ = std::fs::remove_file(copy);
     if let Some(dir) = copy.parent() {
         if only_a_mark(dir) {
@@ -397,14 +446,14 @@ fn decoded_copy(src: &str) -> Result<String, String> {
     let ff = crate::copy::ffmpeg_path().0.ok_or(
         "dubplate can't decode this file itself; with ffmpeg installed it can go on a rekordbox stick, unless the file is damaged (on Windows, the Install ffmpeg now button under 💾 Make a USB for the decks)",
     )?;
-    let version = version_of(src).map_err(|e| e.to_string())?;
+    let version = version_of(src).map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { "the file has gone".to_string() } else { e.to_string() })?;
     let song_dir = decoded_base().join(&sha1_smol::Sha1::from(format!("decoded-3\n{src}")).digest().to_string()[..16]);
     let dir = song_dir.join(&version);
     let stem = Path::new(src).file_stem().map_or_else(|| "song".into(), |s| s.to_string_lossy().into_owned());
     let out = dir.join(format!("{stem}.flac"));
     // look, and claim this version while it's decoded (the mark keeps it from being cleared)
     let part = {
-        let _lock = decoded_lock().ok_or("couldn't use dubplate's folder for decoded songs")?;
+        let _lock = decoded_lock().ok_or("another dubplate is busy with the decoded songs folder; try again in a moment")?;
         let fail = |e: std::io::Error| e.to_string();
         std::fs::create_dir_all(&dir).map_err(fail)?;
         let note = song_dir.join("source");
@@ -433,7 +482,7 @@ fn decoded_copy(src: &str) -> Result<String, String> {
         .args(["-map", "0:a:0", "-map_metadata", "0", "-c:a", "flac", "-sample_fmt", "s16", "-f", "flac"])
         .arg(format!("file:{}", paths::longp(&part.to_string_lossy())))
         .output();
-    let _lock = decoded_lock();
+    let lock = decoded_lock();
     let result = match run {
         Ok(o) if o.status.success() => match std::fs::rename(&part, &out) {
             Ok(()) => Ok(()),
@@ -444,10 +493,12 @@ fn decoded_copy(src: &str) -> Result<String, String> {
         Err(e) => Err(format!("couldn't run ffmpeg ({e})")),
     };
     let _ = std::fs::remove_file(&part);
-    if result.is_err() && !out.is_file() && only_a_mark(&dir) {
+    // tidying shared folders only under the lock
+    if lock.is_some() && result.is_err() && !out.is_file() && only_a_mark(&dir) {
         let _ = std::fs::remove_dir_all(&dir);
         drop_empty_song(&song_dir);
     }
+    drop(lock);
     result.map(|()| out.to_string_lossy().into_owned())
 }
 
@@ -467,7 +518,13 @@ pub fn prepare(song: &Song) -> Result<SourceTrack, String> {
             // a format it doesn't decode goes through ffmpeg (which is named if it's missing);
             // anything else may be damage: ffmpeg gets a go only if it's there, and if it can't
             // read the file either, both say so
-            let gap = !analyser_reads(&song.path) || codec_gap(&first);
+            // (an .m4a or .ogg that opens but gives nothing is most likely a codec it lacks; an
+            // empty WAV, AIFF, FLAC or MP3 is a damaged file)
+            let silent_container = matches!(
+                Path::new(&song.path).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).as_deref(),
+                Some("m4a" | "mp4" | "ogg" | "oga")
+            );
+            let gap = !analyser_reads(&song.path) || codec_gap(&first) || (silent_container && first.contains("the file has no audio in it"));
             if !gap && crate::copy::ffmpeg_path().0.is_none() {
                 return Err(first);
             }
@@ -1852,7 +1909,8 @@ mod tests {
         assert_eq!(r.errors.len(), 1, "{r:?}");
         // a damaged file of a kind dubplate reads is reported as unreadable, never as needing
         // ffmpeg installed (with ffmpeg there, it says ffmpeg couldn't read it either)
-        assert!(r.errors[0].1.contains("can't read the audio") && !r.errors[0].1.contains("install ffmpeg"), "{r:?}");
+        let why = &r.errors[0].1;
+        assert!(why.contains("can't read the audio") && !why.contains("ffmpeg installed") && !why.contains("can't decode this file itself"), "{r:?}");
         if crate::copy::ffmpeg_path().0.is_some() {
             assert!(r.errors[0].1.contains("ffmpeg couldn't read it either"), "{r:?}");
             // and nothing is left behind for it (no copy, and no folder noting the song)
